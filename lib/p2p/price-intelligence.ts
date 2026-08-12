@@ -1,5 +1,5 @@
 import "server-only";
-import { gte, sql } from "drizzle-orm";
+import { asc, gte, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { snapshots } from "@/db/schema";
 
@@ -37,6 +37,47 @@ export async function getPriceExtremes(windowDays = 7): Promise<PriceExtremes> {
     maxBid: row?.maxBid == null ? null : Number(row.maxBid),
     sampleCount: Number(row?.sampleCount ?? 0),
   };
+}
+
+export type PricePoint = { collectedAt: Date; bestAsk: number | null; bestBid: number | null };
+
+const MAX_HISTORY_POINTS = 150;
+
+/**
+ * Histórico de preço para desenhar um gráfico simples — não precisa de
+ * abrir uma notificação para perceber "subiu ou desceu nas últimas horas".
+ * Se houver mais amostras do que MAX_HISTORY_POINTS (uma por minuto pode
+ * ser bastante em 24h), reduz por amostragem uniforme — o gráfico continua
+ * a mostrar a forma real, só com menos pontos a desenhar.
+ */
+export async function getPriceHistory(hours = 24): Promise<PricePoint[]> {
+  const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+
+  const rows = await db
+    .select({
+      collectedAt: snapshots.collectedAt,
+      bestAsk: snapshots.bestAsk,
+      bestBid: snapshots.bestBid,
+    })
+    .from(snapshots)
+    .where(gte(snapshots.collectedAt, since))
+    .orderBy(asc(snapshots.collectedAt));
+
+  const points: PricePoint[] = rows.map((r) => ({
+    collectedAt: r.collectedAt,
+    bestAsk: r.bestAsk == null ? null : Number(r.bestAsk),
+    bestBid: r.bestBid == null ? null : Number(r.bestBid),
+  }));
+
+  if (points.length <= MAX_HISTORY_POINTS) return points;
+
+  const step = points.length / MAX_HISTORY_POINTS;
+  const sampled: PricePoint[] = [];
+  for (let i = 0; i < MAX_HISTORY_POINTS; i++) {
+    sampled.push(points[Math.floor(i * step)]);
+  }
+  sampled.push(points[points.length - 1]);
+  return sampled;
 }
 
 export type ReferenceDivergenceSignal = {

@@ -9,6 +9,7 @@ import { TableFilterInput } from "@/components/ui/table-filter-input";
 import { usePagination } from "@/lib/use-pagination";
 import { formatMzn } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { reputationTone, reputationLabel } from "@/lib/reputation";
 
 export type AdRow = {
   advNo: string;
@@ -33,13 +34,6 @@ const COLUMNS: { key: SortKey; label: string; align?: "right" }[] = [
   { key: "monthOrders", label: "Ordens/mês", align: "right" },
   { key: "monthFinishRate", label: "Conclusão", align: "right" },
 ];
-
-function reputationTone(finishRate: number | null, orders: number | null): "good" | "warning" | "critical" {
-  if (finishRate === null || orders === null) return "warning";
-  if (finishRate >= 0.97 && orders >= 200) return "good";
-  if (finishRate >= 0.95 && orders >= 50) return "warning";
-  return "critical";
-}
 
 export function SortableAdsTable({
   ads,
@@ -134,7 +128,10 @@ export function SortableAdsTable({
                     <td className="tabular px-3 py-2 text-right text-[var(--muted)]">{formatMzn(ad.maxExecutable)}</td>
                     <td className="tabular px-3 py-2 text-right text-[var(--muted)]">{ad.monthOrders ?? "?"}</td>
                     <td className="px-3 py-2 text-right">
-                      <Badge tone={tone}>{((ad.monthFinishRate ?? 0) * 100).toFixed(0)}%</Badge>
+                      <Badge tone={tone}>
+                        {reputationLabel(ad.monthFinishRate, ad.monthOrders)} ·{" "}
+                        {((ad.monthFinishRate ?? 0) * 100).toFixed(0)}%
+                      </Badge>
                     </td>
                     <td className="px-3 py-2 text-[var(--muted)]">{ad.payMethods.join(", ")}</td>
                   </tr>

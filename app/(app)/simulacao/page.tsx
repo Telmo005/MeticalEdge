@@ -110,6 +110,14 @@ export default async function SimulacaoPage({
                       <CardTitle>Detalhe para {formatMzn(selected.capital)}</CardTitle>
                     </div>
 
+                    {!selected.trip.buy.fullyFilled ? (
+                      <p className="mb-4 rounded-md bg-[var(--warning-bg)] px-3 py-2 text-sm text-[var(--warning)]">
+                        Só {formatMzn(selected.trip.buy.inputUsed)} de {formatMzn(selected.capital)} coube nos
+                        anúncios disponíveis agora — os valores abaixo (&ldquo;Gastas&rdquo;, &ldquo;Ficas
+                        com&rdquo;) são sobre o que foi mesmo usado, não sobre o capital todo.
+                      </p>
+                    ) : null}
+
                     <div className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
                       <div>
                         <CardLabel>USDT comprado</CardLabel>

@@ -6,6 +6,7 @@ import { SidebarNav, BottomTabBar } from "@/components/layout/nav";
 import { SignOutButton } from "@/components/layout/sign-out-button";
 import { NotificationBell } from "@/components/layout/notification-bell";
 import { AutoRefresh } from "@/components/auto-refresh";
+import { AppFooter } from "@/components/layout/app-footer";
 
 // Todas as páginas aqui dentro leem dados ao vivo (mercado, capital,
 // notificações) atrás de autenticação — nunca devem ser pré-geradas em
@@ -80,7 +81,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </header>
 
         <main className="px-4 py-6 pb-24 sm:px-6 lg:px-8 lg:py-8 lg:pb-8">
-          <div className="mx-auto max-w-5xl">{children}</div>
+          <div className="mx-auto max-w-5xl">
+            {children}
+            <AppFooter className="mt-10 border-t border-[var(--border)] pt-4" />
+          </div>
         </main>
       </div>
 
