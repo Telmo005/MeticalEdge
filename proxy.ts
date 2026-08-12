@@ -34,6 +34,10 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|icon|apple-icon|manifest.json).*)",
+    // manifest.webmanifest (não manifest.json — é o nome real que o Next
+    // gera a partir de app/manifest.ts) e sw.js têm de ficar sempre
+    // acessíveis sem sessão, senão o Android nunca considera a app
+    // instalável (avalia isto antes/independentemente do login).
+    "/((?!_next/static|_next/image|favicon.ico|icon|apple-icon|manifest.webmanifest|sw.js).*)",
   ],
 };

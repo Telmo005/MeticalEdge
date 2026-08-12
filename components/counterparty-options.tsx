@@ -12,6 +12,7 @@ import { ExecutionPlan } from "@/components/execution-plan";
 import { formatMzn, formatPct, formatUsdt, cn } from "@/lib/utils";
 import { usePagination } from "@/lib/use-pagination";
 import { useSort } from "@/lib/use-sort";
+import { reputationTone, reputationLabel } from "@/lib/reputation";
 import type { FillStep } from "@/lib/p2p/orderbook";
 
 export type CounterpartyRow = {
@@ -31,13 +32,6 @@ export type CounterpartyRow = {
 
 const PAGE_SIZE = 15;
 type SortKey = "merchantName" | "price" | "usdtSold" | "netMzn" | "netPct" | "reputation";
-
-function reputationTone(finishRate: number | null, orders: number | null): "good" | "warning" | "critical" {
-  if (finishRate === null || orders === null) return "warning";
-  if (finishRate >= 0.97 && orders >= 200) return "good";
-  if (finishRate >= 0.95 && orders >= 50) return "warning";
-  return "critical";
-}
 
 /** Por omissão só mostra opções realmente boas (usáveis e acima do limiar de
  *  lucro definido em Configurações) — ninguém deve ter de calcular nada para
@@ -192,7 +186,8 @@ export function CounterpartyOptions({
                       )}
                       <td className="px-3 py-2">
                         <Badge tone={tone}>
-                          {r.monthOrders ?? "?"}/mês · {((r.monthFinishRate ?? 0) * 100).toFixed(0)}%
+                          {reputationLabel(r.monthFinishRate, r.monthOrders)} · {r.monthOrders ?? "?"}/mês ·{" "}
+                          {((r.monthFinishRate ?? 0) * 100).toFixed(0)}%
                         </Badge>
                       </td>
                     </tr>

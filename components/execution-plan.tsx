@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { formatMzn, formatUsdt } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { reputationTone, reputationLabel } from "@/lib/reputation";
 
 export type PlanStep = {
   advNo?: string;
@@ -12,13 +13,6 @@ export type PlanStep = {
   monthOrders: number | null;
   monthFinishRate: number | null;
 };
-
-function reputationTone(finishRate: number | null, orders: number | null): "good" | "warning" | "critical" {
-  if (finishRate === null || orders === null) return "warning";
-  if (finishRate >= 0.97 && orders >= 200) return "good";
-  if (finishRate >= 0.95 && orders >= 50) return "warning";
-  return "critical";
-}
 
 function StepRow({ step, index, kind }: { step: PlanStep; index: number; kind: "spend" | "receive" }) {
   const tone = reputationTone(step.monthFinishRate, step.monthOrders);
@@ -36,7 +30,8 @@ function StepRow({ step, index, kind }: { step: PlanStep; index: number; kind: "
         </p>
         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
           <Badge tone={tone}>
-            {step.monthOrders ?? "?"} ordens/mês · {((step.monthFinishRate ?? 0) * 100).toFixed(0)}% conclusão
+            {reputationLabel(step.monthFinishRate, step.monthOrders)} · {step.monthOrders ?? "?"} ordens/mês ·{" "}
+            {((step.monthFinishRate ?? 0) * 100).toFixed(0)}% conclusão
           </Badge>
         </div>
       </div>

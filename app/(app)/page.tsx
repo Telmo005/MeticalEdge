@@ -8,8 +8,10 @@ import { RefreshButton } from "@/components/refresh-button";
 import { ExecutionPlan } from "@/components/execution-plan";
 import { OpportunitiesHistoryTable } from "@/components/dashboard/opportunities-history-table";
 import { MarketIntelligenceCard } from "@/components/dashboard/market-intelligence-card";
-import { getPriceExtremes, getReferenceDivergenceSignal } from "@/lib/p2p/price-intelligence";
+import { PriceHistoryChart } from "@/components/dashboard/price-history-chart";
+import { getPriceExtremes, getReferenceDivergenceSignal, getPriceHistory } from "@/lib/p2p/price-intelligence";
 import { analyzeTopAdLifecycle } from "@/lib/p2p/ad-lifecycle";
+import { OnboardingWelcome } from "@/components/onboarding-welcome";
 import { formatMzn, formatPct, formatUsdt } from "@/lib/utils";
 
 function timeAgo(date: Date): string {
@@ -22,14 +24,18 @@ function timeAgo(date: Date): string {
 }
 
 export default async function DashboardPage() {
-  const [config, snapshot, opportunitiesList, stats] = await Promise.all([
-    getSettings(),
+  const config = await getSettings();
+  if (Number(config?.currentCapitalMzn ?? 0) === 0) {
+    return <OnboardingWelcome />;
+  }
+
+  const [snapshot, opportunitiesList, stats] = await Promise.all([
     getLatestSnapshot(),
     getRecentOpportunities(200),
     getTradeStats(),
   ]);
 
-  const [priceExtremes, askLifecycle, bidLifecycle, divergence] = await Promise.all([
+  const [priceExtremes, askLifecycle, bidLifecycle, divergence, priceHistory] = await Promise.all([
     getPriceExtremes(),
     analyzeTopAdLifecycle("ask"),
     analyzeTopAdLifecycle("bid"),
@@ -38,6 +44,7 @@ export default async function DashboardPage() {
       snapshot?.bestBid == null ? null : Number(snapshot.bestBid),
       snapshot?.referenceUsdMzn == null ? null : Number(snapshot.referenceUsdMzn)
     ),
+    getPriceHistory(24),
   ]);
 
   const latestOpportunity = opportunitiesList[0] ?? null;
@@ -113,6 +120,12 @@ export default async function DashboardPage() {
           </div>
         )}
       </section>
+
+      {snapshot ? (
+        <section>
+          <PriceHistoryChart points={priceHistory} hours={24} />
+        </section>
+      ) : null}
 
       {snapshot ? (
         <section>

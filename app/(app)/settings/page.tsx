@@ -6,6 +6,7 @@ import {
   resetRuleSettingsFormAction,
   updateAlertChannelsFormAction,
 } from "@/lib/actions/settings";
+import { clearErrorLogsFormAction } from "@/lib/actions/error-logs";
 import { RECOMMENDED_RULE_DEFAULTS } from "@/lib/rule-defaults";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
@@ -254,11 +255,26 @@ export default async function SettingsPage() {
       </Card>
 
       <Card>
-        <CardTitle>Erros recentes</CardTitle>
-        <p className="mb-4 mt-1 text-sm text-[var(--muted)]">
-          Qualquer erro do lado do servidor (varredura falhada, base de dados indisponível, etc.) fica
-          registado aqui automaticamente e dispara um push na hora.
-        </p>
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle>Erros recentes</CardTitle>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              Qualquer erro do lado do servidor (varredura falhada, base de dados indisponível, etc.) fica
+              registado aqui automaticamente e dispara um push na hora.
+            </p>
+          </div>
+          {errorLogsList.length > 0 ? (
+            <form action={clearErrorLogsFormAction}>
+              <SubmitButton
+                variant="danger"
+                pendingText="A limpar..."
+                confirmMessage="Apagar todos os erros registados? Isto não pode ser desfeito."
+              >
+                Limpar erros
+              </SubmitButton>
+            </form>
+          ) : null}
+        </div>
         <ErrorLogsTable logs={errorLogsList} />
       </Card>
     </div>
