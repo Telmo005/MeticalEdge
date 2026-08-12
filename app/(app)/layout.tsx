@@ -30,15 +30,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       {/* Sidebar — desktop apenas */}
       <aside className="hidden shrink-0 flex-col justify-between border-r border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] px-4 py-5 lg:flex lg:h-dvh lg:w-64 lg:sticky lg:top-0">
         <div>
-          <div className="mb-6 flex items-center justify-between px-2">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5 text-[var(--accent)]" />
-              <div>
-                <p className="text-sm font-bold text-[var(--sidebar-fg)]">MeticalEdge</p>
-                <p className="text-[11px] text-[var(--sidebar-muted)]">Monitor USDT/MZN</p>
-              </div>
+          <div className="mb-6 flex items-center gap-2 px-2">
+            <TrendingUp className="h-5 w-5 text-[var(--accent)]" />
+            <div>
+              <p className="text-sm font-bold text-[var(--sidebar-fg)]">MeticalEdge</p>
+              <p className="text-[11px] text-[var(--sidebar-muted)]">Monitor USDT/MZN</p>
             </div>
-            <NotificationBell unreadCount={unreadCount} alerts={recentAlerts} />
           </div>
           <SidebarNav />
         </div>
@@ -74,6 +71,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             />
             <SignOutButton compact />
           </div>
+        </header>
+
+        {/* Barra superior — desktop apenas: o sino fica sempre à direita da
+            página, fora da sidebar (que está à esquerda). */}
+        <header className="sticky top-0 z-30 hidden h-14 items-center justify-end border-b border-[var(--border)] bg-[var(--surface)] px-6 lg:flex">
+          <NotificationBell unreadCount={unreadCount} alerts={recentAlerts} />
         </header>
 
         <main className="px-4 py-6 pb-24 sm:px-6 lg:px-8 lg:py-8 lg:pb-8">

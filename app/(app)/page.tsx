@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { RefreshButton } from "@/components/refresh-button";
 import { ExecutionPlan } from "@/components/execution-plan";
 import { OpportunitiesHistoryTable } from "@/components/dashboard/opportunities-history-table";
+import { MarketIntelligenceCard } from "@/components/dashboard/market-intelligence-card";
+import { getPriceExtremes } from "@/lib/p2p/price-intelligence";
 import { formatMzn, formatPct, formatUsdt } from "@/lib/utils";
 
 function timeAgo(date: Date): string {
@@ -19,11 +21,12 @@ function timeAgo(date: Date): string {
 }
 
 export default async function DashboardPage() {
-  const [config, snapshot, opportunitiesList, stats] = await Promise.all([
+  const [config, snapshot, opportunitiesList, stats, priceExtremes] = await Promise.all([
     getSettings(),
     getLatestSnapshot(),
     getRecentOpportunities(200),
     getTradeStats(),
+    getPriceExtremes(),
   ]);
 
   const latestOpportunity = opportunitiesList[0] ?? null;
@@ -99,6 +102,16 @@ export default async function DashboardPage() {
           </div>
         )}
       </section>
+
+      {snapshot ? (
+        <section>
+          <MarketIntelligenceCard
+            bestAsk={snapshot.bestAsk === null ? null : Number(snapshot.bestAsk)}
+            bestBid={snapshot.bestBid === null ? null : Number(snapshot.bestBid)}
+            extremes={priceExtremes}
+          />
+        </section>
+      ) : null}
 
       <section>
         <h2 className="mb-3 text-sm font-semibold text-[var(--muted)]">Oportunidade mais recente</h2>

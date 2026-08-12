@@ -107,7 +107,7 @@ export function ExecutionPlan({
       {netMzn !== undefined ? (
         <div
           className={cn(
-            "flex flex-wrap items-center justify-between gap-2 rounded-md border p-3",
+            "flex flex-wrap items-center justify-between gap-3 rounded-md border p-3",
             isProfit
               ? "border-[var(--good)]/30 bg-[var(--good-bg)]"
               : "border-[var(--critical)]/30 bg-[var(--critical-bg)]"
@@ -116,10 +116,16 @@ export function ExecutionPlan({
           <span className="text-sm text-[var(--foreground)]">
             Gastas {formatMzn(totalSpend)} → recebes {formatMzn(totalReceive)} (bruto) → depois de taxas:
           </span>
-          <span className={cn("tabular text-base font-bold", isProfit ? "text-[var(--good)]" : "text-[var(--critical)]")}>
-            {isProfit ? "+" : ""}
-            {formatMzn(netMzn)} {isProfit ? "de lucro" : "de prejuízo"}
-          </span>
+          <div className="text-right">
+            <div className="text-[10px] uppercase tracking-wide text-[var(--muted)]">Ficas no total com</div>
+            <div className={cn("tabular text-lg font-bold", isProfit ? "text-[var(--good)]" : "text-[var(--critical)]")}>
+              {formatMzn(totalSpend + netMzn)}
+            </div>
+            <div className={cn("tabular text-xs font-semibold", isProfit ? "text-[var(--good)]" : "text-[var(--critical)]")}>
+              {isProfit ? "+" : ""}
+              {formatMzn(netMzn)} {isProfit ? "de lucro" : "de prejuízo"}
+            </div>
+          </div>
         </div>
       ) : null}
     </div>
