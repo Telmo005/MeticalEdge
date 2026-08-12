@@ -144,3 +144,18 @@ export const capitalLedger = meticalEdge.table("capital_ledger", {
   index("capital_ledger_changed_at_idx").on(t.changedAt.desc()),
 ]);
 export type CapitalLedgerEntry = typeof capitalLedger.$inferSelect;
+
+/** Registo de qualquer erro do lado do servidor — apanhado globalmente por
+ *  instrumentation.ts (onRequestError), não precisa de try/catch manual
+ *  espalhado pelo código. Mesmo padrão do "payment gateway" (error_logs). */
+export const errorLogs = meticalEdge.table("error_logs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  source: text("source").notNull(),
+  message: text("message").notNull(),
+  details: jsonb("details"),
+  stack: text("stack"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("error_logs_created_at_idx").on(t.createdAt.desc()),
+]);
+export type ErrorLogEntry = typeof errorLogs.$inferSelect;

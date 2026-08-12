@@ -7,9 +7,9 @@ const PUBLIC_ROUTES = ["/login"];
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // /api/cron/* tem a própria autenticação (CRON_SECRET) — não passa pelo
-  // gate de sessão Supabase.
-  if (pathname.startsWith("/api/cron/")) {
+  // /api/cron/* e /api/debug/* têm a própria autenticação (CRON_SECRET) —
+  // não passam pelo gate de sessão Supabase.
+  if (pathname.startsWith("/api/cron/") || pathname.startsWith("/api/debug/")) {
     return NextResponse.next();
   }
 

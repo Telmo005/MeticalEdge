@@ -294,6 +294,13 @@ export function evaluateSellCounterparties(
     return { bidAd, usdtSold, mznReceived, residualUsdt, grossProfitMzn, grossPct, net, usable };
   });
 
-  options.sort((a, b) => b.net.medio.netMzn - a.net.medio.netMzn);
+  // Opções usáveis primeiro (as únicas em que a venda de facto acontece),
+  // ordenadas da melhor para a pior dentro desse grupo. As não usáveis vêm
+  // sempre depois, senão o seu "lucro" de ~-taxas (uma venda que nunca
+  // chega a existir) engana ao aparecer misturado com trocas reais.
+  options.sort((a, b) => {
+    if (a.usable !== b.usable) return a.usable ? -1 : 1;
+    return b.net.medio.netMzn - a.net.medio.netMzn;
+  });
   return { buy, options };
 }
