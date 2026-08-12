@@ -10,6 +10,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
 import { SubmitButton } from "@/components/submit-button";
 import { CapitalChart } from "@/components/capital-chart";
+import { TestNotificationButton } from "@/components/test-notification-button";
 import { formatMzn } from "@/lib/utils";
 
 export default async function SettingsPage() {
@@ -162,10 +163,11 @@ export default async function SettingsPage() {
       </Card>
 
       <Card>
-        <CardTitle>Alertas por SMS</CardTitle>
+        <CardTitle>Alertas — push e SMS</CardTitle>
         <p className="mb-4 mt-1 text-sm text-[var(--muted)]">
-          Duplica o alerta push por SMS — útil se o telemóvel não estiver com a app do gateway aberta.
-          Continua a receber sempre o push; o SMS é só um reforço opcional.
+          O push é sempre enviado. O SMS duplica o alerta — útil se o telemóvel não estiver com a app do
+          gateway aberta. Usa &ldquo;Testar notificações&rdquo; para confirmar que ambos chegam, sem esperar
+          por uma oportunidade real.
         </p>
         <form action={updateAlertChannelsFormAction} className="flex flex-col gap-4">
           <div className="flex items-center gap-2">
@@ -195,6 +197,10 @@ export default async function SettingsPage() {
             Guardar canal SMS
           </SubmitButton>
         </form>
+
+        <div className="mt-4 border-t border-[var(--border)] pt-4">
+          <TestNotificationButton />
+        </div>
       </Card>
 
       <Card>
