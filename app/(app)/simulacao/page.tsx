@@ -6,6 +6,7 @@ import { ExecutionPlan } from "@/components/execution-plan";
 import { SimulateForm } from "@/components/simulate-form";
 import { CounterpartyOptions, type CounterpartyRow } from "@/components/counterparty-options";
 import { TrancheKpisChart, type TrancheRow } from "@/components/tranche-kpis-chart";
+import { PriceProfitChart, type PricePoint } from "@/components/price-profit-chart";
 import { Tabs } from "@/components/ui/tabs";
 import { formatMzn, formatUsdt } from "@/lib/utils";
 import type { Ad } from "@/lib/p2p/orderbook";
@@ -41,6 +42,14 @@ export default async function SimulacaoPage({
     nOrders: trip.nOrders,
     fullyFilled: trip.buy.fullyFilled && trip.residualUsdt < 0.0001,
   }));
+
+  const pricePoints: PricePoint[] = rows
+    .filter((r) => r.trip.buy.vwapPrice !== null && r.trip.buy.fullyFilled)
+    .map(({ capital, trip, net }) => ({
+      capital,
+      buyPrice: trip.buy.vwapPrice as number,
+      netMzn: net.medio.netMzn,
+    }));
 
   const counterparties = evaluateSellCounterparties(askAds, bidAds, chosenCapital);
   const counterpartyRows: CounterpartyRow[] = counterparties.options.map((o) => ({
@@ -138,7 +147,11 @@ export default async function SimulacaoPage({
                     <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
                       Como executar
                     </p>
-                    <ExecutionPlan buySteps={selected.trip.buy.steps} sellSteps={selected.trip.sell.steps} />
+                    <ExecutionPlan
+                      buySteps={selected.trip.buy.steps}
+                      sellSteps={selected.trip.sell.steps}
+                      netMzn={selected.net.medio.netMzn}
+                    />
                   </Card>
                 ) : null,
               },
@@ -151,7 +164,11 @@ export default async function SimulacaoPage({
                       Todas as opções de venda para {formatMzn(chosenCapital)}, sem filtrar por reputação —
                       decides tu com quem negociar. Toca numa linha para ver o plano de execução completo.
                     </p>
-                    <CounterpartyOptions buySteps={counterparties.buy.steps} rows={counterpartyRows} />
+                    <CounterpartyOptions
+                      buySteps={counterparties.buy.steps}
+                      rows={counterpartyRows}
+                      minDisplayProfitMzn={Number(config?.minDisplayProfitMzn ?? 0)}
+                    />
                   </div>
                 ),
               },
@@ -159,6 +176,19 @@ export default async function SimulacaoPage({
                 key: "comparar",
                 label: "Comparar capitais",
                 content: <TrancheKpisChart rows={trancheRows} chosenCapital={chosenCapital} />,
+              },
+              {
+                key: "grafico",
+                label: "Gráfico preço x lucro",
+                content: pricePoints.length >= 2 ? (
+                  <PriceProfitChart points={pricePoints} highlightCapital={chosenCapital} />
+                ) : (
+                  <Card>
+                    <p className="text-sm text-[var(--muted)]">
+                      Ainda não há dados suficientes no livro para desenhar este gráfico.
+                    </p>
+                  </Card>
+                ),
               },
             ]}
           />

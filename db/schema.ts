@@ -25,6 +25,11 @@ export const settings = meticalEdge.table("settings", {
   id: boolean("id").primaryKey().default(true),
   currentCapitalMzn: numeric("current_capital_mzn", { precision: 14, scale: 2 }).notNull().default("0"),
   initialCapitalMzn: numeric("initial_capital_mzn", { precision: 14, scale: 2 }).notNull().default("0"),
+  /** Em MZN, não percentagem — mais fácil de perceber para quem não é
+   *  técnico ("só me mostra o que dá pelo menos X meticais"). Usado para
+   *  simplificar a lista "Por comerciante": por omissão só mostra opções
+   *  que passam este valor, o resto fica escondido atrás de "ver tudo". */
+  minDisplayProfitMzn: numeric("min_display_profit_mzn", { precision: 14, scale: 2 }).notNull().default("0"),
   minNetPctAlert: numeric("min_net_pct_alert", { precision: 6, scale: 3 }).notNull().default("0.15"),
   minGrossSpreadPct: numeric("min_gross_spread_pct", { precision: 6, scale: 3 }).notNull().default("0.6"),
   minCounterpartyFinishRate: numeric("min_counterparty_finish_rate", { precision: 5, scale: 4 }).notNull().default("0.95"),

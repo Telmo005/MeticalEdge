@@ -5,11 +5,14 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollTable } from "@/components/ui/scroll-table";
 import { Pagination } from "@/components/ui/pagination";
 import { TableFilterInput } from "@/components/ui/table-filter-input";
+import { SortHeader } from "@/components/ui/sort-header";
 import { usePagination } from "@/lib/use-pagination";
+import { useSort } from "@/lib/use-sort";
 import { formatMzn, formatPct } from "@/lib/utils";
 import type { Opportunity } from "@/db/schema";
 
 const PAGE_SIZE = 10;
+type SortKey = "detectedAt" | "buyVwap" | "sellVwap" | "netPctMedium" | "status";
 
 function timeAgo(date: Date): string {
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
@@ -29,7 +32,23 @@ export function OpportunitiesHistoryTable({ opportunities }: { opportunities: Op
     return opportunities.filter((o) => o.status.toLowerCase().includes(q));
   }, [opportunities, query]);
 
-  const { page, totalPages, pageItems, goToPage, totalItems } = usePagination(filtered, PAGE_SIZE);
+  const { sorted, sortKey, sortDir, toggleSort } = useSort<Opportunity, SortKey>(
+    filtered,
+    (o, key) => {
+      switch (key) {
+        case "detectedAt": return new Date(o.detectedAt).getTime();
+        case "buyVwap": return o.buyVwap === null ? null : Number(o.buyVwap);
+        case "sellVwap": return o.sellVwap === null ? null : Number(o.sellVwap);
+        case "netPctMedium": return o.netPctMedium === null ? null : Number(o.netPctMedium);
+        case "status": return o.status;
+        default: return null;
+      }
+    },
+    "detectedAt",
+    "desc"
+  );
+
+  const { page, totalPages, pageItems, goToPage, totalItems } = usePagination(sorted, PAGE_SIZE);
 
   return (
     <div className="flex flex-col gap-3">
@@ -42,11 +61,11 @@ export function OpportunitiesHistoryTable({ opportunities }: { opportunities: Op
         <table className="w-full text-sm">
           <thead className="sticky top-0 z-10 bg-[var(--surface-2)] text-left text-xs uppercase text-[var(--muted)] shadow-[0_1px_0_var(--border)]">
             <tr>
-              <th className="px-3 py-2">Quando</th>
-              <th className="px-3 py-2 text-right">Compra</th>
-              <th className="px-3 py-2 text-right">Venda</th>
-              <th className="px-3 py-2 text-right">Líquido médio</th>
-              <th className="px-3 py-2">Estado</th>
+              <SortHeader label="Quando" sortKey="detectedAt" active={sortKey === "detectedAt"} dir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Compra" align="right" sortKey="buyVwap" active={sortKey === "buyVwap"} dir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Venda" align="right" sortKey="sellVwap" active={sortKey === "sellVwap"} dir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Líquido médio" align="right" sortKey="netPctMedium" active={sortKey === "netPctMedium"} dir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Estado" sortKey="status" active={sortKey === "status"} dir={sortDir} onClick={toggleSort} />
             </tr>
           </thead>
           <tbody>

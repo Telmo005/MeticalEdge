@@ -171,6 +171,7 @@ export default async function DashboardPage() {
                 <ExecutionPlan
                   buySteps={latestOpportunity.detail.buySteps}
                   sellSteps={latestOpportunity.detail.sellSteps}
+                  netMzn={Number(latestOpportunity.netProfitMediumMzn)}
                 />
                 <div className="mt-4">
                   <Link href={`/trades/new?opportunityId=${latestOpportunity.id}`}>

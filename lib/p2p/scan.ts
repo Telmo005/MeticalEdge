@@ -119,7 +119,16 @@ export async function runMarketScan(): Promise<ScanResult> {
   // classificar a oportunidade como "segura" ou não, mas essa classificação
   // já não decide sozinha se avisa: quem decide é o utilizador, por isso o
   // aviso deixa isso bem claro no corpo da mensagem.
-  const isProfitable = trip.buy.inputUsed > 0 && net.medio.netMzn > 0;
+  //
+  // Adicionalmente (sem substituir a regra acima): também notifica sempre
+  // que o lucro BRUTO ultrapassa o limiar em MZN que o utilizador definiu em
+  // Configurações ("Lucro mínimo a considerar") — mesmo em cenários onde o
+  // líquido médio ainda não é positivo, para não deixar passar despercebida
+  // uma oportunidade grande na origem só porque as taxas a apertam.
+  const hasCapital = trip.buy.inputUsed > 0;
+  const netPositive = hasCapital && net.medio.netMzn > 0;
+  const grossAboveThreshold = hasCapital && trip.grossProfitMzn > Number(config.minDisplayProfitMzn);
+  const isProfitable = netPositive || grossAboveThreshold;
 
   let alertSent = false;
   if (isProfitable) {

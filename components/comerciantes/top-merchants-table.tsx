@@ -4,11 +4,14 @@ import { useMemo, useState } from "react";
 import { ScrollTable } from "@/components/ui/scroll-table";
 import { Pagination } from "@/components/ui/pagination";
 import { TableFilterInput } from "@/components/ui/table-filter-input";
+import { SortHeader } from "@/components/ui/sort-header";
 import { usePagination } from "@/lib/use-pagination";
+import { useSort } from "@/lib/use-sort";
 import { formatMzn } from "@/lib/utils";
 import type { TopMerchant } from "@/lib/p2p/analysis";
 
 const PAGE_SIZE = 20;
+type SortKey = "merchantName" | "merchantType" | "monthOrders" | "monthFinishRate" | "priceMin";
 
 export function TopMerchantsTable({ rows }: { rows: TopMerchant[] }) {
   const [query, setQuery] = useState("");
@@ -19,7 +22,23 @@ export function TopMerchantsTable({ rows }: { rows: TopMerchant[] }) {
     return rows.filter((m) => m.merchantName.toLowerCase().includes(q));
   }, [rows, query]);
 
-  const { page, totalPages, pageItems, goToPage, totalItems } = usePagination(filtered, PAGE_SIZE);
+  const { sorted, sortKey, sortDir, toggleSort } = useSort<TopMerchant, SortKey>(
+    filtered,
+    (m, key) => {
+      switch (key) {
+        case "merchantName": return m.merchantName;
+        case "merchantType": return m.merchantType;
+        case "monthOrders": return m.monthOrders ?? -1;
+        case "monthFinishRate": return m.monthFinishRate ?? -1;
+        case "priceMin": return m.priceMin;
+        default: return null;
+      }
+    },
+    "monthOrders",
+    "desc"
+  );
+
+  const { page, totalPages, pageItems, goToPage, totalItems } = usePagination(sorted, PAGE_SIZE);
 
   return (
     <div className="flex flex-col gap-3">
@@ -28,12 +47,12 @@ export function TopMerchantsTable({ rows }: { rows: TopMerchant[] }) {
         <table className="w-full text-sm">
           <thead className="sticky top-0 z-10 bg-[var(--surface-2)] text-left text-xs uppercase text-[var(--muted)] shadow-[0_1px_0_var(--border)]">
             <tr>
-              <th className="px-3 py-2">Comerciante</th>
-              <th className="px-3 py-2">Tipo</th>
+              <SortHeader label="Comerciante" sortKey="merchantName" active={sortKey === "merchantName"} dir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Tipo" sortKey="merchantType" active={sortKey === "merchantType"} dir={sortDir} onClick={toggleSort} />
               <th className="px-3 py-2">Lado(s)</th>
-              <th className="px-3 py-2 text-right">Ordens/mês</th>
-              <th className="px-3 py-2 text-right">Conclusão</th>
-              <th className="px-3 py-2 text-right">Faixa de preço</th>
+              <SortHeader label="Ordens/mês" align="right" sortKey="monthOrders" active={sortKey === "monthOrders"} dir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Conclusão" align="right" sortKey="monthFinishRate" active={sortKey === "monthFinishRate"} dir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Faixa de preço" align="right" sortKey="priceMin" active={sortKey === "priceMin"} dir={sortDir} onClick={toggleSort} />
             </tr>
           </thead>
           <tbody>

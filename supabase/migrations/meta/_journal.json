@@ -29,6 +29,13 @@
       "when": 1786544280075,
       "tag": "0003_error_logs",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786551322940,
+      "tag": "0004_min_display_profit",
+      "breakpoints": true
     }
   ]
 }

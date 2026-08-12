@@ -4,10 +4,13 @@ import { useMemo, useState } from "react";
 import { ScrollTable } from "@/components/ui/scroll-table";
 import { Pagination } from "@/components/ui/pagination";
 import { TableFilterInput } from "@/components/ui/table-filter-input";
+import { SortHeader } from "@/components/ui/sort-header";
 import { usePagination } from "@/lib/use-pagination";
+import { useSort } from "@/lib/use-sort";
 import type { ErrorLogEntry } from "@/db/schema";
 
 const PAGE_SIZE = 10;
+type SortKey = "createdAt" | "source" | "message";
 
 export function ErrorLogsTable({ logs }: { logs: ErrorLogEntry[] }) {
   const [query, setQuery] = useState("");
@@ -18,7 +21,21 @@ export function ErrorLogsTable({ logs }: { logs: ErrorLogEntry[] }) {
     return logs.filter((l) => l.source.toLowerCase().includes(q) || l.message.toLowerCase().includes(q));
   }, [logs, query]);
 
-  const { page, totalPages, pageItems, goToPage, totalItems } = usePagination(filtered, PAGE_SIZE);
+  const { sorted, sortKey, sortDir, toggleSort } = useSort<ErrorLogEntry, SortKey>(
+    filtered,
+    (l, key) => {
+      switch (key) {
+        case "createdAt": return new Date(l.createdAt).getTime();
+        case "source": return l.source;
+        case "message": return l.message;
+        default: return null;
+      }
+    },
+    "createdAt",
+    "desc"
+  );
+
+  const { page, totalPages, pageItems, goToPage, totalItems } = usePagination(sorted, PAGE_SIZE);
 
   if (logs.length === 0) {
     return <p className="text-sm text-[var(--muted)]">Sem erros registados — bom sinal.</p>;
@@ -31,9 +48,9 @@ export function ErrorLogsTable({ logs }: { logs: ErrorLogEntry[] }) {
         <table className="w-full text-sm">
           <thead className="sticky top-0 z-10 bg-[var(--surface-2)] text-left text-xs uppercase text-[var(--muted)] shadow-[0_1px_0_var(--border)]">
             <tr>
-              <th className="px-3 py-2">Quando</th>
-              <th className="px-3 py-2">Origem</th>
-              <th className="px-3 py-2">Mensagem</th>
+              <SortHeader label="Quando" sortKey="createdAt" active={sortKey === "createdAt"} dir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Origem" sortKey="source" active={sortKey === "source"} dir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Mensagem" sortKey="message" active={sortKey === "message"} dir={sortDir} onClick={toggleSort} />
             </tr>
           </thead>
           <tbody>
