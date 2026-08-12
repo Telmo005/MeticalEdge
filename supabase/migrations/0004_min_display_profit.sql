@@ -1,0 +1,1 @@
+ALTER TABLE "metical_edge"."settings" ADD COLUMN "min_display_profit_mzn" numeric(14, 2) DEFAULT '0' NOT NULL;

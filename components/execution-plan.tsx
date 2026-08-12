@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { formatMzn, formatUsdt } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 export type PlanStep = {
   advNo?: string;
@@ -19,7 +20,7 @@ function reputationTone(finishRate: number | null, orders: number | null): "good
   return "critical";
 }
 
-function StepRow({ step, index }: { step: PlanStep; index: number }) {
+function StepRow({ step, index, kind }: { step: PlanStep; index: number; kind: "spend" | "receive" }) {
   const tone = reputationTone(step.monthFinishRate, step.monthOrders);
   return (
     <li className="flex items-start gap-3 rounded-md bg-[var(--surface-2)] p-3">
@@ -39,45 +40,88 @@ function StepRow({ step, index }: { step: PlanStep; index: number }) {
           </Badge>
         </div>
       </div>
-      <div className="tabular text-right text-sm font-semibold">{formatMzn(step.mznUsed)}</div>
+      <div className="shrink-0 text-right">
+        <div className="text-[10px] uppercase tracking-wide text-[var(--muted)]">
+          {kind === "spend" ? "gastas" : "recebes (bruto)"}
+        </div>
+        <div className="tabular text-sm font-semibold">{formatMzn(step.mznUsed)}</div>
+      </div>
     </li>
   );
 }
 
 /** Instruções passo-a-passo em linguagem simples: de quem comprar, a quem
  *  vender, e quanto — para quem não conhece o mercado P2P conseguir
- *  executar sem interpretar números soltos. */
-export function ExecutionPlan({ buySteps, sellSteps }: { buySteps: PlanStep[]; sellSteps: PlanStep[] }) {
+ *  executar sem interpretar números soltos. Cada valor diz claramente se é
+ *  dinheiro que sai ("gastas") ou que entra ainda sem descontar taxas
+ *  ("recebes bruto") — sem isto, o valor de venda parece o ganho final,
+ *  quando só o resumo no fim (net) é que é. */
+export function ExecutionPlan({
+  buySteps,
+  sellSteps,
+  netMzn,
+}: {
+  buySteps: PlanStep[];
+  sellSteps: PlanStep[];
+  /** Se dado, mostra uma barra de resumo clara no fim: quanto gastaste,
+   *  quanto recebeste bruto, e o resultado final depois de taxas. */
+  netMzn?: number;
+}) {
+  const totalSpend = buySteps.reduce((s, x) => s + x.mznUsed, 0);
+  const totalReceive = sellSteps.reduce((s, x) => s + x.mznUsed, 0);
+  const isProfit = (netMzn ?? 0) >= 0;
+
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
-      <div>
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
-          Passo 1 — Compra USDT (nesta ordem)
-        </p>
-        {buySteps.length === 0 ? (
-          <p className="text-sm text-[var(--muted)]">Sem execução possível.</p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {buySteps.map((s, i) => (
-              <StepRow key={s.advNo ?? i} step={s} index={i + 1} />
-            ))}
-          </ul>
-        )}
+    <div className="flex flex-col gap-4">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
+            Passo 1 — Compra USDT (nesta ordem)
+          </p>
+          {buySteps.length === 0 ? (
+            <p className="text-sm text-[var(--muted)]">Sem execução possível.</p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {buySteps.map((s, i) => (
+                <StepRow key={s.advNo ?? i} step={s} index={i + 1} kind="spend" />
+              ))}
+            </ul>
+          )}
+        </div>
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
+            Passo 2 — Vende o USDT comprado (nesta ordem)
+          </p>
+          {sellSteps.length === 0 ? (
+            <p className="text-sm text-[var(--muted)]">Sem execução possível.</p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {sellSteps.map((s, i) => (
+                <StepRow key={s.advNo ?? i} step={s} index={i + 1} kind="receive" />
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
-      <div>
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
-          Passo 2 — Vende o USDT comprado (nesta ordem)
-        </p>
-        {sellSteps.length === 0 ? (
-          <p className="text-sm text-[var(--muted)]">Sem execução possível.</p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {sellSteps.map((s, i) => (
-              <StepRow key={s.advNo ?? i} step={s} index={i + 1} />
-            ))}
-          </ul>
-        )}
-      </div>
+
+      {netMzn !== undefined ? (
+        <div
+          className={cn(
+            "flex flex-wrap items-center justify-between gap-2 rounded-md border p-3",
+            isProfit
+              ? "border-[var(--good)]/30 bg-[var(--good-bg)]"
+              : "border-[var(--critical)]/30 bg-[var(--critical-bg)]"
+          )}
+        >
+          <span className="text-sm text-[var(--foreground)]">
+            Gastas {formatMzn(totalSpend)} → recebes {formatMzn(totalReceive)} (bruto) → depois de taxas:
+          </span>
+          <span className={cn("tabular text-base font-bold", isProfit ? "text-[var(--good)]" : "text-[var(--critical)]")}>
+            {isProfit ? "+" : ""}
+            {formatMzn(netMzn)} {isProfit ? "de lucro" : "de prejuízo"}
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -38,6 +38,22 @@ export async function setCapitalAction(newCapitalMzn: number, reason = "manual_a
   });
 }
 
+/** Único parâmetro simples que decide o que aparece por omissão nas listas
+ *  de oportunidades (ex.: "Por comerciante") — em MZN, não percentagem,
+ *  para não obrigar ninguém a calcular nada. */
+export async function setMinDisplayProfitFormAction(formData: FormData) {
+  await requireUser();
+  const value = Number(formData.get("minDisplayProfitMzn"));
+  if (!Number.isFinite(value)) return;
+
+  await db
+    .update(settings)
+    .set({ minDisplayProfitMzn: value.toFixed(2), updatedAt: new Date() })
+    .where(eq(settings.id, true));
+
+  revalidatePath("/", "layout");
+}
+
 export type RuleSettingsInput = {
   minNetPctAlert: number;
   minGrossSpreadPct: number;

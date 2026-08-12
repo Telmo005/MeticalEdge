@@ -1,6 +1,7 @@
 import { getSettings, getCapitalHistory, getRecentErrorLogs } from "@/lib/queries";
 import {
   setCapitalFormAction,
+  setMinDisplayProfitFormAction,
   updateRuleSettingsFormAction,
   resetRuleSettingsFormAction,
   updateAlertChannelsFormAction,
@@ -57,9 +58,33 @@ export default async function SettingsPage() {
       </Card>
 
       <Card>
+        <CardTitle>Lucro mínimo a considerar</CardTitle>
+        <p className="mb-4 mt-1 text-sm text-[var(--muted)]">
+          Só te mostramos, por omissão, opções que rendem pelo menos este valor em Meticais. Sobe este número
+          se quiseres ver só as oportunidades em que tens mais certeza — as restantes continuam visíveis,
+          basta tocar em &ldquo;ver todas&rdquo; onde aparecerem.
+        </p>
+        <form action={setMinDisplayProfitFormAction} className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="minDisplayProfitMzn">Lucro mínimo (MZN)</Label>
+            <Input
+              id="minDisplayProfitMzn"
+              name="minDisplayProfitMzn"
+              type="number"
+              step="1"
+              min="0"
+              defaultValue={config?.minDisplayProfitMzn ?? undefined}
+              className="w-full sm:w-48"
+            />
+          </div>
+          <SubmitButton pendingText="A guardar...">Guardar</SubmitButton>
+        </form>
+      </Card>
+
+      <Card>
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <CardTitle>Regras de entrada</CardTitle>
+            <CardTitle>Regras de entrada (avançado)</CardTitle>
             <p className="mt-1 text-sm text-[var(--muted)]">
               Um alerta só é enviado quando TODAS estas condições se cumprem — ver Secção 10 do relatório
               original. O número entre parêntesis é o valor recomendado.

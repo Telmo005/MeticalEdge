@@ -5,6 +5,7 @@ import { Tabs } from "@/components/ui/tabs";
 import { RefreshButton } from "@/components/refresh-button";
 import { CrossSideTable } from "@/components/comerciantes/cross-side-table";
 import { TopMerchantsTable } from "@/components/comerciantes/top-merchants-table";
+import { AutoRefresh } from "@/components/auto-refresh";
 
 export default async function ComerciantesPage() {
   const snapshot = await getLatestSnapshot();
@@ -16,6 +17,7 @@ export default async function ComerciantesPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <AutoRefresh />
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold">Comerciantes conhecidos</h1>

@@ -5,11 +5,14 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollTable } from "@/components/ui/scroll-table";
 import { Pagination } from "@/components/ui/pagination";
 import { TableFilterInput } from "@/components/ui/table-filter-input";
+import { SortHeader } from "@/components/ui/sort-header";
 import { usePagination } from "@/lib/use-pagination";
+import { useSort } from "@/lib/use-sort";
 import { formatMzn, formatPct } from "@/lib/utils";
 import type { MerchantCrossSide } from "@/lib/p2p/analysis";
 
 const PAGE_SIZE = 20;
+type SortKey = "merchantName" | "bestBid" | "bestAsk" | "spreadOwnPct" | "monthOrders";
 
 export function CrossSideTable({ rows }: { rows: MerchantCrossSide[] }) {
   const [query, setQuery] = useState("");
@@ -20,7 +23,23 @@ export function CrossSideTable({ rows }: { rows: MerchantCrossSide[] }) {
     return rows.filter((m) => m.merchantName.toLowerCase().includes(q));
   }, [rows, query]);
 
-  const { page, totalPages, pageItems, goToPage, totalItems } = usePagination(filtered, PAGE_SIZE);
+  const { sorted, sortKey, sortDir, toggleSort } = useSort<MerchantCrossSide, SortKey>(
+    filtered,
+    (m, key) => {
+      switch (key) {
+        case "merchantName": return m.merchantName;
+        case "bestBid": return m.bestBid;
+        case "bestAsk": return m.bestAsk;
+        case "spreadOwnPct": return -m.spreadOwnPct;
+        case "monthOrders": return m.monthOrders ?? -1;
+        default: return null;
+      }
+    },
+    "spreadOwnPct",
+    "desc"
+  );
+
+  const { page, totalPages, pageItems, goToPage, totalItems } = usePagination(sorted, PAGE_SIZE);
 
   return (
     <div className="flex flex-col gap-3">
@@ -29,11 +48,11 @@ export function CrossSideTable({ rows }: { rows: MerchantCrossSide[] }) {
         <table className="w-full text-sm">
           <thead className="sticky top-0 z-10 bg-[var(--surface-2)] text-left text-xs uppercase text-[var(--muted)] shadow-[0_1px_0_var(--border)]">
             <tr>
-              <th className="px-3 py-2">Comerciante</th>
-              <th className="px-3 py-2 text-right">Compra (paga)</th>
-              <th className="px-3 py-2 text-right">Venda (cobra)</th>
-              <th className="px-3 py-2 text-right">Margem própria</th>
-              <th className="px-3 py-2 text-right">Ordens/mês</th>
+              <SortHeader label="Comerciante" sortKey="merchantName" active={sortKey === "merchantName"} dir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Compra (paga)" align="right" sortKey="bestBid" active={sortKey === "bestBid"} dir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Venda (cobra)" align="right" sortKey="bestAsk" active={sortKey === "bestAsk"} dir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Margem própria" align="right" sortKey="spreadOwnPct" active={sortKey === "spreadOwnPct"} dir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Ordens/mês" align="right" sortKey="monthOrders" active={sortKey === "monthOrders"} dir={sortDir} onClick={toggleSort} />
               <th className="px-3 py-2">Métodos</th>
             </tr>
           </thead>

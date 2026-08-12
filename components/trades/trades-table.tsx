@@ -5,11 +5,14 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollTable } from "@/components/ui/scroll-table";
 import { Pagination } from "@/components/ui/pagination";
 import { TableFilterInput } from "@/components/ui/table-filter-input";
+import { SortHeader } from "@/components/ui/sort-header";
 import { usePagination } from "@/lib/use-pagination";
+import { useSort } from "@/lib/use-sort";
 import { formatMzn } from "@/lib/utils";
 import type { Trade } from "@/db/schema";
 
 const PAGE_SIZE = 20;
+type SortKey = "executedAt" | "capitalUsedMzn" | "buyPrice" | "sellPrice" | "netProfitMzn" | "outcome";
 
 const OUTCOME_TONE: Record<string, "good" | "warning" | "critical"> = {
   success: "good",
@@ -28,7 +31,24 @@ export function TradesTable({ trades }: { trades: Trade[] }) {
     );
   }, [trades, query]);
 
-  const { page, totalPages, pageItems, goToPage, totalItems } = usePagination(filtered, PAGE_SIZE);
+  const { sorted, sortKey, sortDir, toggleSort } = useSort<Trade, SortKey>(
+    filtered,
+    (t, key) => {
+      switch (key) {
+        case "executedAt": return new Date(t.executedAt).getTime();
+        case "capitalUsedMzn": return Number(t.capitalUsedMzn);
+        case "buyPrice": return t.buyPrice === null ? null : Number(t.buyPrice);
+        case "sellPrice": return t.sellPrice === null ? null : Number(t.sellPrice);
+        case "netProfitMzn": return Number(t.netProfitMzn);
+        case "outcome": return t.outcome;
+        default: return null;
+      }
+    },
+    "executedAt",
+    "desc"
+  );
+
+  const { page, totalPages, pageItems, goToPage, totalItems } = usePagination(sorted, PAGE_SIZE);
 
   return (
     <div className="flex flex-col gap-3">
@@ -41,12 +61,12 @@ export function TradesTable({ trades }: { trades: Trade[] }) {
         <table className="w-full text-sm">
           <thead className="sticky top-0 z-10 bg-[var(--surface-2)] text-left text-xs uppercase text-[var(--muted)] shadow-[0_1px_0_var(--border)]">
             <tr>
-              <th className="px-3 py-2">Data</th>
-              <th className="px-3 py-2 text-right">Capital usado</th>
-              <th className="px-3 py-2 text-right">Compra</th>
-              <th className="px-3 py-2 text-right">Venda</th>
-              <th className="px-3 py-2 text-right">Lucro líquido</th>
-              <th className="px-3 py-2">Resultado</th>
+              <SortHeader label="Data" sortKey="executedAt" active={sortKey === "executedAt"} dir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Capital usado" align="right" sortKey="capitalUsedMzn" active={sortKey === "capitalUsedMzn"} dir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Compra" align="right" sortKey="buyPrice" active={sortKey === "buyPrice"} dir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Venda" align="right" sortKey="sellPrice" active={sortKey === "sellPrice"} dir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Lucro líquido" align="right" sortKey="netProfitMzn" active={sortKey === "netProfitMzn"} dir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Resultado" sortKey="outcome" active={sortKey === "outcome"} dir={sortDir} onClick={toggleSort} />
             </tr>
           </thead>
           <tbody>
