@@ -1,0 +1,146 @@
+import {
+  pgSchema,
+  uuid,
+  numeric,
+  integer,
+  boolean,
+  text,
+  timestamp,
+  jsonb,
+  index,
+} from "drizzle-orm/pg-core";
+import type { Ad, FillStep } from "@/lib/p2p/orderbook";
+
+export type OpportunityDetail = { buySteps: FillStep[]; sellSteps: FillStep[] };
+
+/**
+ * Schema Postgres próprio desta app dentro do projeto Supabase partilhado —
+ * ver supabase/migrations/0001_init.sql para o porquê de não haver RLS
+ * policies nem GRANTs para anon/authenticated: tudo passa pela ligação
+ * directa Postgres do servidor Next.js (DATABASE_URL), nunca por PostgREST.
+ */
+export const meticalEdge = pgSchema("metical_edge");
+
+export const settings = meticalEdge.table("settings", {
+  id: boolean("id").primaryKey().default(true),
+  currentCapitalMzn: numeric("current_capital_mzn", { precision: 14, scale: 2 }).notNull().default("0"),
+  initialCapitalMzn: numeric("initial_capital_mzn", { precision: 14, scale: 2 }).notNull().default("0"),
+  minNetPctAlert: numeric("min_net_pct_alert", { precision: 6, scale: 3 }).notNull().default("0.15"),
+  minGrossSpreadPct: numeric("min_gross_spread_pct", { precision: 6, scale: 3 }).notNull().default("0.6"),
+  minCounterpartyFinishRate: numeric("min_counterparty_finish_rate", { precision: 5, scale: 4 }).notNull().default("0.95"),
+  minCounterpartyMonthlyOrders: integer("min_counterparty_monthly_orders").notNull().default(50),
+  maxOrdersPerLeg: integer("max_orders_per_leg").notNull().default(3),
+  alertCooldownMinutes: integer("alert_cooldown_minutes").notNull().default(20),
+  scanningEnabled: boolean("scanning_enabled").notNull().default(true),
+  /** Alerta por SMS além do push — precisa de um número E.164 (+258...).
+   *  Desligado por omissão até haver um número configurado. */
+  smsAlertsEnabled: boolean("sms_alerts_enabled").notNull().default(false),
+  alertPhoneE164: text("alert_phone_e164"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export type Settings = typeof settings.$inferSelect;
+
+export const snapshots = meticalEdge.table("snapshots", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  collectedAt: timestamp("collected_at", { withTimezone: true }).notNull().defaultNow(),
+  bestAsk: numeric("best_ask", { precision: 10, scale: 4 }),
+  bestBid: numeric("best_bid", { precision: 10, scale: 4 }),
+  midPrice: numeric("mid_price", { precision: 10, scale: 4 }),
+  spreadPct: numeric("spread_pct", { precision: 8, scale: 4 }),
+  isCrossed: boolean("is_crossed").notNull().default(false),
+  nAdsAsk: integer("n_ads_ask").notNull().default(0),
+  nAdsBid: integer("n_ads_bid").notNull().default(0),
+  liquidityAskUsdt: numeric("liquidity_ask_usdt", { precision: 18, scale: 4 }),
+  liquidityBidUsdt: numeric("liquidity_bid_usdt", { precision: 18, scale: 4 }),
+  referenceUsdMzn: numeric("reference_usd_mzn", { precision: 10, scale: 4 }),
+  askAds: jsonb("ask_ads").$type<Ad[]>().notNull().default([]),
+  bidAds: jsonb("bid_ads").$type<Ad[]>().notNull().default([]),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("snapshots_collected_at_idx").on(t.collectedAt.desc()),
+]);
+export type Snapshot = typeof snapshots.$inferSelect;
+export type NewSnapshot = typeof snapshots.$inferInsert;
+
+export const opportunities = meticalEdge.table("opportunities", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  snapshotId: uuid("snapshot_id").notNull().references(() => snapshots.id, { onDelete: "cascade" }),
+  detectedAt: timestamp("detected_at", { withTimezone: true }).notNull().defaultNow(),
+  capitalMzn: numeric("capital_mzn", { precision: 14, scale: 2 }).notNull(),
+  buyVwap: numeric("buy_vwap", { precision: 10, scale: 4 }),
+  sellVwap: numeric("sell_vwap", { precision: 10, scale: 4 }),
+  usdtAmount: numeric("usdt_amount", { precision: 18, scale: 8 }),
+  grossProfitMzn: numeric("gross_profit_mzn", { precision: 14, scale: 2 }),
+  grossPct: numeric("gross_pct", { precision: 8, scale: 4 }),
+  nOrders: integer("n_orders"),
+  residualUsdt: numeric("residual_usdt", { precision: 18, scale: 8 }).notNull().default("0"),
+  netProfitConservativeMzn: numeric("net_profit_conservative_mzn", { precision: 14, scale: 2 }),
+  netProfitMediumMzn: numeric("net_profit_medium_mzn", { precision: 14, scale: 2 }),
+  netProfitOptimisticMzn: numeric("net_profit_optimistic_mzn", { precision: 14, scale: 2 }),
+  netPctConservative: numeric("net_pct_conservative", { precision: 8, scale: 4 }),
+  netPctMedium: numeric("net_pct_medium", { precision: 8, scale: 4 }),
+  netPctOptimistic: numeric("net_pct_optimistic", { precision: 8, scale: 4 }),
+  meetsEntryRules: boolean("meets_entry_rules").notNull().default(false),
+  reasonsBlocked: text("reasons_blocked").array().notNull().default([]),
+  status: text("status", { enum: ["detected", "alerted", "expired", "traded", "dismissed"] })
+    .notNull().default("detected"),
+  detail: jsonb("detail").$type<OpportunityDetail>().notNull().default({ buySteps: [], sellSteps: [] }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("opportunities_detected_at_idx").on(t.detectedAt.desc()),
+  index("opportunities_status_idx").on(t.status),
+]);
+export type Opportunity = typeof opportunities.$inferSelect;
+export type NewOpportunity = typeof opportunities.$inferInsert;
+
+export const alerts = meticalEdge.table("alerts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  opportunityId: uuid("opportunity_id").references(() => opportunities.id, { onDelete: "set null" }),
+  sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+  channel: text("channel").notNull().default("push"),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  gatewayMessageId: text("gateway_message_id"),
+  deliveryError: text("delivery_error"),
+  /** Duplica como notificação dentro da app (sino no layout) — marcado
+   *  quando o utilizador abre/reconhece o alerta. */
+  readAt: timestamp("read_at", { withTimezone: true }),
+}, (t) => [
+  index("alerts_sent_at_idx").on(t.sentAt.desc()),
+]);
+export type Alert = typeof alerts.$inferSelect;
+export type NewAlert = typeof alerts.$inferInsert;
+
+export const trades = meticalEdge.table("trades", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  opportunityId: uuid("opportunity_id").references(() => opportunities.id, { onDelete: "set null" }),
+  executedAt: timestamp("executed_at", { withTimezone: true }).notNull().defaultNow(),
+  reportedAt: timestamp("reported_at", { withTimezone: true }).notNull().defaultNow(),
+  capitalUsedMzn: numeric("capital_used_mzn", { precision: 14, scale: 2 }).notNull(),
+  buyPrice: numeric("buy_price", { precision: 10, scale: 4 }),
+  sellPrice: numeric("sell_price", { precision: 10, scale: 4 }),
+  usdtAmount: numeric("usdt_amount", { precision: 18, scale: 8 }),
+  grossProfitMzn: numeric("gross_profit_mzn", { precision: 14, scale: 2 }),
+  feesPaidMzn: numeric("fees_paid_mzn", { precision: 14, scale: 2 }).notNull().default("0"),
+  netProfitMzn: numeric("net_profit_mzn", { precision: 14, scale: 2 }).notNull(),
+  outcome: text("outcome", { enum: ["success", "partial", "loss"] }).notNull().default("success"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("trades_executed_at_idx").on(t.executedAt.desc()),
+]);
+export type Trade = typeof trades.$inferSelect;
+export type NewTrade = typeof trades.$inferInsert;
+
+export const capitalLedger = meticalEdge.table("capital_ledger", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  changedAt: timestamp("changed_at", { withTimezone: true }).notNull().defaultNow(),
+  deltaMzn: numeric("delta_mzn", { precision: 14, scale: 2 }).notNull(),
+  reason: text("reason").notNull(),
+  tradeId: uuid("trade_id").references(() => trades.id, { onDelete: "set null" }),
+  resultingBalanceMzn: numeric("resulting_balance_mzn", { precision: 14, scale: 2 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("capital_ledger_changed_at_idx").on(t.changedAt.desc()),
+]);
+export type CapitalLedgerEntry = typeof capitalLedger.$inferSelect;

@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1786531223013,
+      "tag": "0000_tough_misty_knight",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1786531253698,
+      "tag": "0001_rls_and_constraints",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786539348688,
+      "tag": "0002_notifications_and_merchant_phone",
+      "breakpoints": true
+    }
+  ]
+}
