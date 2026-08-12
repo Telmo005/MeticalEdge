@@ -19,8 +19,11 @@ function timeAgo(date: Date): string {
 
 /** Sino de notificações dentro da app — duplica o alerta push num registo
  *  persistente que fica visível mesmo que o telemóvel não tenha recebido o
- *  push (app fechada, sem dados, gateway em baixo). Usado na sidebar e na
- *  barra superior mobile. */
+ *  push (app fechada, sem dados, gateway em baixo). O corpo guardado é a
+ *  simulação completa (ver lib/p2p/notify-format.ts), por isso cada item
+ *  começa colapsado (só a primeira linha) e expande ao tocar — mostrar tudo
+ *  logo de início tornaria a lista enorme. Usado na sidebar e na barra
+ *  superior mobile. */
 export function NotificationBell({
   unreadCount,
   alerts,
@@ -31,6 +34,7 @@ export function NotificationBell({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   function handleMarkAllRead() {
@@ -39,7 +43,8 @@ export function NotificationBell({
     });
   }
 
-  function handleOpenAlert(id: string, readAt: Date | null) {
+  function handleToggle(id: string, readAt: Date | null) {
+    setExpandedId((cur) => (cur === id ? null : id));
     if (!readAt) {
       startTransition(async () => {
         await markAlertReadAction(id);
@@ -67,7 +72,7 @@ export function NotificationBell({
       {open ? (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-50 mt-2 w-80 max-w-[90vw] rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-xl">
+          <div className="absolute right-0 z-50 mt-2 w-96 max-w-[92vw] rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-xl">
             <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2">
               <span className="text-sm font-semibold text-[var(--foreground)]">Notificações</span>
               {unreadCount > 0 ? (
@@ -80,29 +85,43 @@ export function NotificationBell({
                 </button>
               ) : null}
             </div>
-            <div className="max-h-80 overflow-y-auto">
+            <div className="max-h-96 overflow-y-auto">
               {alerts.length === 0 ? (
                 <p className="px-3 py-4 text-sm text-[var(--muted)]">Sem notificações ainda.</p>
               ) : (
-                alerts.map((a) => (
-                  <button
-                    key={a.id}
-                    type="button"
-                    onClick={() => handleOpenAlert(a.id, a.readAt)}
-                    className={cn(
-                      "flex w-full flex-col gap-0.5 border-b border-[var(--border)] px-3 py-2.5 text-left last:border-b-0 hover:bg-[var(--surface-2)]",
-                      !a.readAt && "bg-[var(--accent-2)]/5"
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-medium text-[var(--foreground)]">{a.title}</span>
-                      <span className="shrink-0 text-[10px] text-[var(--muted)]">
-                        {timeAgo(new Date(a.sentAt))}
+                alerts.map((a) => {
+                  const isExpanded = expandedId === a.id;
+                  const firstLine = a.body.split("\n")[0];
+                  return (
+                    <button
+                      key={a.id}
+                      type="button"
+                      onClick={() => handleToggle(a.id, a.readAt)}
+                      className={cn(
+                        "flex w-full flex-col gap-0.5 border-b border-[var(--border)] px-3 py-2.5 text-left last:border-b-0 hover:bg-[var(--surface-2)]",
+                        !a.readAt && "bg-[var(--accent-2)]/5"
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium text-[var(--foreground)]">{a.title}</span>
+                        <span className="shrink-0 text-[10px] text-[var(--muted)]">
+                          {timeAgo(new Date(a.sentAt))}
+                        </span>
+                      </div>
+                      <span
+                        className={cn(
+                          "text-xs text-[var(--muted)]",
+                          isExpanded ? "whitespace-pre-line" : "truncate"
+                        )}
+                      >
+                        {isExpanded ? a.body : firstLine}
                       </span>
-                    </div>
-                    <span className="text-xs text-[var(--muted)] line-clamp-2">{a.body}</span>
-                  </button>
-                ))
+                      {!isExpanded && a.body.includes("\n") ? (
+                        <span className="text-[10px] text-[var(--accent-2)]">ver simulação completa</span>
+                      ) : null}
+                    </button>
+                  );
+                })
               )}
             </div>
           </div>

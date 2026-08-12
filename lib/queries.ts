@@ -1,7 +1,7 @@
 import "server-only";
 import { desc, eq, sql, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { settings, snapshots, opportunities, trades, alerts, capitalLedger } from "@/db/schema";
+import { settings, snapshots, opportunities, trades, alerts, capitalLedger, errorLogs } from "@/db/schema";
 
 export async function getSettings() {
   const [row] = await db.select().from(settings).where(eq(settings.id, true)).limit(1);
@@ -36,8 +36,12 @@ export async function getUnreadAlertsCount() {
   return Number(row?.n ?? 0);
 }
 
-export async function getRecentTrades(limit = 50) {
+export async function getRecentTrades(limit = 500) {
   return db.select().from(trades).orderBy(desc(trades.executedAt)).limit(limit);
+}
+
+export async function getRecentErrorLogs(limit = 30) {
+  return db.select().from(errorLogs).orderBy(desc(errorLogs.createdAt)).limit(limit);
 }
 
 export async function getCapitalHistory(limit = 100) {

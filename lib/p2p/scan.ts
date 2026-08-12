@@ -6,6 +6,7 @@ import { fetchAllAds } from "@/lib/p2p/binance-client";
 import { normalizeAll } from "@/lib/p2p/orderbook";
 import { evaluateOpportunity } from "@/lib/p2p/analysis";
 import { fetchUsdMznReference } from "@/lib/p2p/reference-price";
+import { buildOpportunityMessage } from "@/lib/p2p/notify-format";
 
 export type ScanResult = {
   skipped?: string;
@@ -131,26 +132,28 @@ export async function runMarketScan(): Promise<ScanResult> {
       .limit(1);
 
     if (!recentAlert) {
-      const safe = evaluation.meetsEntryRules;
-      const title = safe ? "Oportunidade segura de lucro" : "Oportunidade de lucro (com avisos)";
-      const warning = safe ? "" : `\n\n⚠ Nem todas as regras de segurança se cumprem: ${evaluation.reasonsBlocked.join("; ")}.`;
-      const body =
-        `Comprar a ${trip.buy.vwapPrice?.toFixed(2)} MZN, vender a ${trip.sell.vwapPrice?.toFixed(2)} MZN. ` +
-        `Capital ${capitalMzn.toFixed(0)} MZN -> lucro líquido ~${net.medio.netMzn.toFixed(0)} MZN ` +
-        `(${net.medio.netPct.toFixed(2)}%), ${trip.nOrders} ordens.${warning} Abrir MeticalEdge para executar.`;
+      const { title, fullBody, shortBody } = buildOpportunityMessage({
+        capitalMzn,
+        trip,
+        net,
+        meetsEntryRules: evaluation.meetsEntryRules,
+        reasonsBlocked: evaluation.reasonsBlocked,
+      });
 
-      const pushResult = await sendPush(title, body);
+      const pushResult = await sendPush(title, shortBody);
 
       let smsError: string | null = null;
       if (config.smsAlertsEnabled && config.alertPhoneE164) {
-        const smsResult = await sendSms(config.alertPhoneE164, `${title}\n\n${body}`);
+        const smsResult = await sendSms(config.alertPhoneE164, `${title}\n\n${shortBody}`);
         smsError = smsResult.ok ? null : smsResult.error;
       }
 
+      // O corpo guardado (e mostrado no sino dentro da app) é a simulação
+      // completa, sem o limite de 500/1000 caracteres do push/SMS.
       await db.insert(alerts).values({
         opportunityId: opportunity.id,
         title,
-        body,
+        body: fullBody,
         gatewayMessageId: pushResult.ok ? pushResult.id : null,
         deliveryError: pushResult.ok ? smsError : `push: ${pushResult.error}${smsError ? `; sms: ${smsError}` : ""}`,
       });

@@ -1,11 +1,12 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardLabel } from "@/components/ui/card";
 import { ScrollTable } from "@/components/ui/scroll-table";
 import { Pagination } from "@/components/ui/pagination";
+import { TableFilterInput } from "@/components/ui/table-filter-input";
 import { ExecutionPlan } from "@/components/execution-plan";
 import { formatMzn, formatPct, formatUsdt, cn } from "@/lib/utils";
 import { usePagination } from "@/lib/use-pagination";
@@ -40,10 +41,18 @@ function reputationTone(finishRate: number | null, orders: number | null): "good
  *  panos. Cada linha expande para mostrar o plano de execução completo. */
 export function CounterpartyOptions({ buySteps, rows }: { buySteps: FillStep[]; rows: CounterpartyRow[] }) {
   const [expanded, setExpanded] = useState<string | null>(null);
-  const { page, totalPages, pageItems, goToPage, totalItems } = usePagination(rows, PAGE_SIZE);
+  const [query, setQuery] = useState("");
 
   const usableRows = rows.filter((r) => r.usable);
   const best = usableRows[0]; // já vem ordenado: usáveis primeiro, melhor lucro primeiro
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) return rows;
+    const q = query.trim().toLowerCase();
+    return rows.filter((r) => r.merchantName.toLowerCase().includes(q));
+  }, [rows, query]);
+
+  const { page, totalPages, pageItems, goToPage, totalItems } = usePagination(filtered, PAGE_SIZE);
 
   return (
     <div className="flex flex-col gap-4">
@@ -74,6 +83,8 @@ export function CounterpartyOptions({ buySteps, rows }: { buySteps: FillStep[]; 
         </Card>
       </div>
 
+      <TableFilterInput value={query} onChange={(v) => { setQuery(v); goToPage(1); }} />
+
       <ScrollTable maxHeight="none" className="max-h-none">
         <table className="w-full text-sm">
           <thead className="sticky top-0 z-10 bg-[var(--surface-2)] text-left text-xs uppercase text-[var(--muted)] shadow-[0_1px_0_var(--border)]">
@@ -88,6 +99,13 @@ export function CounterpartyOptions({ buySteps, rows }: { buySteps: FillStep[]; 
             </tr>
           </thead>
           <tbody>
+            {pageItems.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="px-3 py-6 text-center text-[var(--muted)]">
+                  Nenhum comerciante corresponde a &ldquo;{query}&rdquo;.
+                </td>
+              </tr>
+            ) : null}
             {pageItems.map((r) => {
               const isOpen = expanded === r.advNo;
               const tone = reputationTone(r.monthFinishRate, r.monthOrders);
