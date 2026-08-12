@@ -7,6 +7,11 @@ import { normalizeAll } from "@/lib/p2p/orderbook";
 import { evaluateOpportunity } from "@/lib/p2p/analysis";
 import { fetchUsdMznReference } from "@/lib/p2p/reference-price";
 import { buildOpportunityMessage } from "@/lib/p2p/notify-format";
+import { getPriceExtremes } from "@/lib/p2p/price-intelligence";
+
+const PRICE_SIGNAL_WINDOW_DAYS = 7;
+const PRICE_SIGNAL_MIN_SAMPLES = 30;
+const PRICE_SIGNAL_EPSILON = 0.01;
 
 export type ScanResult = {
   skipped?: string;
@@ -169,6 +174,67 @@ export async function runMarketScan(): Promise<ScanResult> {
       await db.update(opportunities).set({ status: "alerted" }).where(eq(opportunities.id, opportunity.id));
       alertSent = pushResult.ok;
     }
+  }
+
+  // --- Inteligência de preços: mínimo/máximo recente ---------------------
+  // Compara o preço desta varredura com o histórico já guardado (uma
+  // varredura por minuto, graças ao cron) para avisar quando o mercado está
+  // no melhor ponto visto nos últimos dias para comprar ou vender — sem
+  // exigir que ninguém leia gráfico nenhum. Independente do alerta de
+  // oportunidade acima: um é "há lucro na viagem completa agora", este é
+  // "este lado do mercado está num ponto historicamente bom".
+  async function sendGuardedAlert(title: string, body: string) {
+    const cooldownSince = new Date(Date.now() - config.alertCooldownMinutes * 60_000);
+    const [recent] = await db
+      .select({ id: alerts.id })
+      .from(alerts)
+      .where(and(eq(alerts.title, title), gte(alerts.sentAt, cooldownSince)))
+      .orderBy(desc(alerts.sentAt))
+      .limit(1);
+    if (recent) return;
+
+    const pushResult = await sendPush(title, body);
+    let smsError: string | null = null;
+    if (config.smsAlertsEnabled && config.alertPhoneE164) {
+      const smsResult = await sendSms(config.alertPhoneE164, `${title}\n\n${body}`);
+      smsError = smsResult.ok ? null : smsResult.error;
+    }
+    await db.insert(alerts).values({
+      opportunityId: opportunity.id,
+      title,
+      body,
+      gatewayMessageId: pushResult.ok ? pushResult.id : null,
+      deliveryError: pushResult.ok ? smsError : `push: ${pushResult.error}${smsError ? `; sms: ${smsError}` : ""}`,
+    });
+  }
+
+  const extremes = await getPriceExtremes(PRICE_SIGNAL_WINDOW_DAYS);
+  const hasEnoughHistory = extremes.sampleCount >= PRICE_SIGNAL_MIN_SAMPLES;
+
+  if (
+    hasEnoughHistory &&
+    summary.bestAsk !== null &&
+    extremes.minAsk !== null &&
+    summary.bestAsk <= extremes.minAsk + PRICE_SIGNAL_EPSILON
+  ) {
+    await sendGuardedAlert(
+      "Preço de compra no mínimo recente — bom momento para comprar",
+      `USDT está a ${summary.bestAsk.toFixed(2)} MZN para comprar — o preço mais baixo dos últimos ` +
+        `${PRICE_SIGNAL_WINDOW_DAYS} dias. Pode valer a pena aproveitar agora.`
+    );
+  }
+
+  if (
+    hasEnoughHistory &&
+    summary.bestBid !== null &&
+    extremes.maxBid !== null &&
+    summary.bestBid >= extremes.maxBid - PRICE_SIGNAL_EPSILON
+  ) {
+    await sendGuardedAlert(
+      "Preço de venda no máximo recente — bom momento para vender",
+      `USDT está a ${summary.bestBid.toFixed(2)} MZN para vender — o preço mais alto dos últimos ` +
+        `${PRICE_SIGNAL_WINDOW_DAYS} dias. Pode valer a pena vender agora se tiveres USDT disponível.`
+    );
   }
 
   return {
