@@ -1,7 +1,6 @@
 import { getLatestSnapshot } from "@/lib/queries";
 import { Card } from "@/components/ui/card";
 import { RefreshButton } from "@/components/refresh-button";
-import { AutoRefresh } from "@/components/auto-refresh";
 import { Tabs } from "@/components/ui/tabs";
 import { SortableAdsTable, type AdRow } from "@/components/livro/sortable-ads-table";
 import { maxMznExecutable, type Ad } from "@/lib/p2p/orderbook";
@@ -26,7 +25,6 @@ export default async function LivroPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <AutoRefresh />
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold">Livro de ofertas — USDT/MZN</h1>

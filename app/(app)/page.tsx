@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { RefreshButton } from "@/components/refresh-button";
 import { ExecutionPlan } from "@/components/execution-plan";
 import { OpportunitiesHistoryTable } from "@/components/dashboard/opportunities-history-table";
-import { AutoRefresh } from "@/components/auto-refresh";
 import { formatMzn, formatPct, formatUsdt } from "@/lib/utils";
 
 function timeAgo(date: Date): string {
@@ -31,7 +30,6 @@ export default async function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-8">
-      <AutoRefresh />
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold">Painel</h1>

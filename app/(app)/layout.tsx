@@ -5,6 +5,7 @@ import { formatMzn } from "@/lib/utils";
 import { SidebarNav, BottomTabBar } from "@/components/layout/nav";
 import { SignOutButton } from "@/components/layout/sign-out-button";
 import { NotificationBell } from "@/components/layout/notification-bell";
+import { AutoRefresh } from "@/components/auto-refresh";
 
 // Todas as páginas aqui dentro leem dados ao vivo (mercado, capital,
 // notificações) atrás de autenticação — nunca devem ser pré-geradas em
@@ -23,6 +24,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-dvh lg:flex">
+      {/* Uma única instância aqui no layout partilhado — actualiza sozinho
+          qualquer ecrã em que estejamos, sem repetir isto página a página. */}
+      <AutoRefresh />
       {/* Sidebar — desktop apenas */}
       <aside className="hidden shrink-0 flex-col justify-between border-r border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] px-4 py-5 lg:flex lg:h-dvh lg:w-64 lg:sticky lg:top-0">
         <div>

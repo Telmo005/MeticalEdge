@@ -7,7 +7,6 @@ import { SimulateForm } from "@/components/simulate-form";
 import { CounterpartyOptions, type CounterpartyRow } from "@/components/counterparty-options";
 import { TrancheKpisChart, type TrancheRow } from "@/components/tranche-kpis-chart";
 import { PriceProfitChart, type PricePoint } from "@/components/price-profit-chart";
-import { AutoRefresh } from "@/components/auto-refresh";
 import { Tabs } from "@/components/ui/tabs";
 import { formatMzn, formatUsdt } from "@/lib/utils";
 import type { Ad } from "@/lib/p2p/orderbook";
@@ -79,7 +78,6 @@ export default async function SimulacaoPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <AutoRefresh />
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold">Simulação de lucro</h1>
