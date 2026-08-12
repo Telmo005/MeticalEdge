@@ -8,7 +8,8 @@ import { RefreshButton } from "@/components/refresh-button";
 import { ExecutionPlan } from "@/components/execution-plan";
 import { OpportunitiesHistoryTable } from "@/components/dashboard/opportunities-history-table";
 import { MarketIntelligenceCard } from "@/components/dashboard/market-intelligence-card";
-import { getPriceExtremes } from "@/lib/p2p/price-intelligence";
+import { getPriceExtremes, getReferenceDivergenceSignal } from "@/lib/p2p/price-intelligence";
+import { analyzeTopAdLifecycle } from "@/lib/p2p/ad-lifecycle";
 import { formatMzn, formatPct, formatUsdt } from "@/lib/utils";
 
 function timeAgo(date: Date): string {
@@ -21,12 +22,22 @@ function timeAgo(date: Date): string {
 }
 
 export default async function DashboardPage() {
-  const [config, snapshot, opportunitiesList, stats, priceExtremes] = await Promise.all([
+  const [config, snapshot, opportunitiesList, stats] = await Promise.all([
     getSettings(),
     getLatestSnapshot(),
     getRecentOpportunities(200),
     getTradeStats(),
+  ]);
+
+  const [priceExtremes, askLifecycle, bidLifecycle, divergence] = await Promise.all([
     getPriceExtremes(),
+    analyzeTopAdLifecycle("ask"),
+    analyzeTopAdLifecycle("bid"),
+    getReferenceDivergenceSignal(
+      snapshot?.bestAsk == null ? null : Number(snapshot.bestAsk),
+      snapshot?.bestBid == null ? null : Number(snapshot.bestBid),
+      snapshot?.referenceUsdMzn == null ? null : Number(snapshot.referenceUsdMzn)
+    ),
   ]);
 
   const latestOpportunity = opportunitiesList[0] ?? null;
@@ -109,6 +120,9 @@ export default async function DashboardPage() {
             bestAsk={snapshot.bestAsk === null ? null : Number(snapshot.bestAsk)}
             bestBid={snapshot.bestBid === null ? null : Number(snapshot.bestBid)}
             extremes={priceExtremes}
+            askLifecycle={askLifecycle}
+            bidLifecycle={bidLifecycle}
+            divergence={divergence}
           />
         </section>
       ) : null}

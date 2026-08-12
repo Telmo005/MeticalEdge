@@ -1,13 +1,18 @@
 import { getLatestSnapshot } from "@/lib/queries";
 import { merchantCrossSide, topMerchantsByActivity } from "@/lib/p2p/analysis";
+import { getPersonalMerchantScorecard } from "@/lib/p2p/merchant-scorecard";
 import { Card } from "@/components/ui/card";
 import { Tabs } from "@/components/ui/tabs";
 import { RefreshButton } from "@/components/refresh-button";
 import { CrossSideTable } from "@/components/comerciantes/cross-side-table";
 import { TopMerchantsTable } from "@/components/comerciantes/top-merchants-table";
+import { PersonalScorecardTable } from "@/components/comerciantes/personal-scorecard-table";
 
 export default async function ComerciantesPage() {
-  const snapshot = await getLatestSnapshot();
+  const [snapshot, personalScorecard] = await Promise.all([
+    getLatestSnapshot(),
+    getPersonalMerchantScorecard(),
+  ]);
   const askAds = snapshot?.askAds ?? [];
   const bidAds = snapshot?.bidAds ?? [];
 
@@ -52,6 +57,19 @@ export default async function ComerciantesPage() {
               key: "top",
               label: `Maior volume (${top.length})`,
               content: <TopMerchantsTable rows={top} />,
+            },
+            {
+              key: "experiencia",
+              label: `A tua experiência (${personalScorecard.length})`,
+              content: (
+                <div>
+                  <PersonalScorecardTable rows={personalScorecard} />
+                  <p className="mt-2 text-xs text-[var(--muted)]">
+                    Isto não é a nota de reputação da Binance — é construído a partir das tuas próprias
+                    operações reportadas em /trades. Quanto mais operações registares, mais fiável fica.
+                  </p>
+                </div>
+              ),
             },
           ]}
         />

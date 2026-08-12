@@ -7,11 +7,18 @@ import { normalizeAll } from "@/lib/p2p/orderbook";
 import { evaluateOpportunity } from "@/lib/p2p/analysis";
 import { fetchUsdMznReference } from "@/lib/p2p/reference-price";
 import { buildOpportunityMessage } from "@/lib/p2p/notify-format";
-import { getPriceExtremes } from "@/lib/p2p/price-intelligence";
+import { getPriceExtremes, getReferenceDivergenceSignal } from "@/lib/p2p/price-intelligence";
+import { analyzeTopAdLifecycle } from "@/lib/p2p/ad-lifecycle";
 
 const PRICE_SIGNAL_WINDOW_DAYS = 7;
 const PRICE_SIGNAL_MIN_SAMPLES = 30;
 const PRICE_SIGNAL_EPSILON = 0.01;
+
+const NEW_AD_MIN_IMPROVEMENT_PCT = 0.1;
+
+const REFERENCE_DIVERGENCE_WINDOW_DAYS = 7;
+const REFERENCE_DIVERGENCE_MIN_SAMPLES = 180;
+const REFERENCE_DIVERGENCE_Z_THRESHOLD = 1.5;
 
 export type ScanResult = {
   skipped?: string;
@@ -72,6 +79,14 @@ export async function runMarketScan(): Promise<ScanResult> {
   });
   const { summary, trip, net } = evaluation;
 
+  // Ordenados por preço (melhor primeiro) antes de gravar — assim o
+  // primeiro elemento do array guardado é sempre o topo do livro daquele
+  // lado, o que os motores de inteligência (anúncio parado / anúncio novo)
+  // em lib/p2p/ad-lifecycle.ts dependem para ler o histórico de forma
+  // barata (só o elemento [0] de cada snapshot passado).
+  const sortedAskAds = [...askAds].sort((a, b) => a.price - b.price);
+  const sortedBidAds = [...bidAds].sort((a, b) => b.price - a.price);
+
   const [snapshot] = await db
     .insert(snapshots)
     .values({
@@ -85,8 +100,8 @@ export async function runMarketScan(): Promise<ScanResult> {
       liquidityAskUsdt: summary.liquidityAskUsdt.toFixed(4),
       liquidityBidUsdt: summary.liquidityBidUsdt.toFixed(4),
       referenceUsdMzn: reference?.usdMzn?.toFixed(4),
-      askAds: askAds.slice(0, 200),
-      bidAds: bidAds.slice(0, 200),
+      askAds: sortedAskAds.slice(0, 200),
+      bidAds: sortedBidAds.slice(0, 200),
     })
     .returning();
 
@@ -219,8 +234,8 @@ export async function runMarketScan(): Promise<ScanResult> {
   ) {
     await sendGuardedAlert(
       "Preço de compra no mínimo recente — bom momento para comprar",
-      `USDT está a ${summary.bestAsk.toFixed(2)} MZN para comprar — o preço mais baixo dos últimos ` +
-        `${PRICE_SIGNAL_WINDOW_DAYS} dias. Pode valer a pena aproveitar agora.`
+      `Comprar USDT agora: ${summary.bestAsk.toFixed(2)} MZN\n\n` +
+        `É o preço mais baixo dos últimos ${PRICE_SIGNAL_WINDOW_DAYS} dias. Pode valer a pena aproveitar agora.`
     );
   }
 
@@ -232,8 +247,105 @@ export async function runMarketScan(): Promise<ScanResult> {
   ) {
     await sendGuardedAlert(
       "Preço de venda no máximo recente — bom momento para vender",
-      `USDT está a ${summary.bestBid.toFixed(2)} MZN para vender — o preço mais alto dos últimos ` +
-        `${PRICE_SIGNAL_WINDOW_DAYS} dias. Pode valer a pena vender agora se tiveres USDT disponível.`
+      `Vender USDT agora: ${summary.bestBid.toFixed(2)} MZN\n\n` +
+        `É o preço mais alto dos últimos ${PRICE_SIGNAL_WINDOW_DAYS} dias. Pode valer a pena vender agora se tiveres USDT disponível.`
+    );
+  }
+
+  // --- Ciclo de vida do topo do livro: anúncio novo / anúncio parado -----
+  // "new": o melhor preço mudou de anúncio agora mesmo e melhorou de forma
+  // não-trivial — tende a durar pouco, vale a pena avisar com urgência.
+  // "stale": o mesmo anúncio está em primeiro lugar há muitos minutos
+  // enquanto o preço de referência da Binance já se moveu — o comerciante
+  // provavelmente esqueceu-se do preço, não é uma escolha deliberada dele.
+  const [askLifecycle, bidLifecycle] = await Promise.all([
+    analyzeTopAdLifecycle("ask"),
+    analyzeTopAdLifecycle("bid"),
+  ]);
+
+  if (askLifecycle.kind === "new") {
+    const improvementPct =
+      askLifecycle.previousPrice !== null
+        ? (Math.abs(askLifecycle.previousPrice - askLifecycle.price) / askLifecycle.previousPrice) * 100
+        : 100;
+    if (improvementPct >= NEW_AD_MIN_IMPROVEMENT_PCT) {
+      await sendGuardedAlert(
+        "Novo melhor preço de compra — pode não durar",
+        `Novo preço de compra: ${askLifecycle.price.toFixed(2)} MZN\n\n` +
+          `Acabou de aparecer, melhor do que o anterior (${(askLifecycle.previousPrice ?? askLifecycle.price).toFixed(2)} MZN). ` +
+          `Ofertas assim costumam esgotar depressa — se queres aproveitar, é agora.`
+      );
+    }
+  }
+
+  if (bidLifecycle.kind === "new") {
+    const improvementPct =
+      bidLifecycle.previousPrice !== null
+        ? (Math.abs(bidLifecycle.previousPrice - bidLifecycle.price) / bidLifecycle.previousPrice) * 100
+        : 100;
+    if (improvementPct >= NEW_AD_MIN_IMPROVEMENT_PCT) {
+      await sendGuardedAlert(
+        "Novo melhor preço de venda — pode não durar",
+        `Novo preço de venda: ${bidLifecycle.price.toFixed(2)} MZN\n\n` +
+          `Acabou de aparecer, melhor do que o anterior (${(bidLifecycle.previousPrice ?? bidLifecycle.price).toFixed(2)} MZN). ` +
+          `Ofertas assim costumam esgotar depressa — se tens USDT disponível, é agora.`
+      );
+    }
+  }
+
+  if (askLifecycle.kind === "stale") {
+    await sendGuardedAlert(
+      "Anúncio de compra parado — pode estar desactualizado",
+      `Melhor preço de compra: ${askLifecycle.price.toFixed(2)} MZN\n\n` +
+        `Está sem mudar há ${askLifecycle.streakMinutes} minutos, mas o preço de referência da Binance já se ` +
+        `moveu ${askLifecycle.referenceMovePct.toFixed(2)}% nesse tempo. O comerciante pode ter-se esquecido do anúncio.`
+    );
+  }
+
+  if (bidLifecycle.kind === "stale") {
+    await sendGuardedAlert(
+      "Anúncio de venda parado — pode estar desactualizado",
+      `Melhor preço de venda: ${bidLifecycle.price.toFixed(2)} MZN\n\n` +
+        `Está sem mudar há ${bidLifecycle.streakMinutes} minutos, mas o preço de referência da Binance já se ` +
+        `moveu ${bidLifecycle.referenceMovePct.toFixed(2)}% nesse tempo. O comerciante pode ter-se esquecido do anúncio.`
+    );
+  }
+
+  // --- Divergência incomum vs. preço de referência -----------------------
+  const divergence = await getReferenceDivergenceSignal(
+    summary.bestAsk,
+    summary.bestBid,
+    reference?.usdMzn ?? null,
+    REFERENCE_DIVERGENCE_WINDOW_DAYS
+  );
+
+  if (
+    divergence.sampleCount >= REFERENCE_DIVERGENCE_MIN_SAMPLES &&
+    divergence.askPremiumZScore !== null &&
+    Math.abs(divergence.askPremiumZScore) >= REFERENCE_DIVERGENCE_Z_THRESHOLD &&
+    divergence.currentAskPremiumPct !== null
+  ) {
+    await sendGuardedAlert(
+      "Desvio incomum no preço de compra vs. referência",
+      `Preço de compra: ${summary.bestAsk?.toFixed(2) ?? "—"} MZN\n\n` +
+        `Está ${Math.abs(divergence.currentAskPremiumPct).toFixed(2)}% ` +
+        `${divergence.currentAskPremiumPct >= 0 ? "acima" : "abaixo"} do preço de referência da Binance — isto é ` +
+        `incomum comparado com os últimos ${REFERENCE_DIVERGENCE_WINDOW_DAYS} dias deste mercado, vale a pena olhar com atenção.`
+    );
+  }
+
+  if (
+    divergence.sampleCount >= REFERENCE_DIVERGENCE_MIN_SAMPLES &&
+    divergence.bidDiscountZScore !== null &&
+    Math.abs(divergence.bidDiscountZScore) >= REFERENCE_DIVERGENCE_Z_THRESHOLD &&
+    divergence.currentBidDiscountPct !== null
+  ) {
+    await sendGuardedAlert(
+      "Desvio incomum no preço de venda vs. referência",
+      `Preço de venda: ${summary.bestBid?.toFixed(2) ?? "—"} MZN\n\n` +
+        `Está ${Math.abs(divergence.currentBidDiscountPct).toFixed(2)}% ` +
+        `${divergence.currentBidDiscountPct >= 0 ? "abaixo" : "acima"} do preço de referência da Binance — isto é ` +
+        `incomum comparado com os últimos ${REFERENCE_DIVERGENCE_WINDOW_DAYS} dias deste mercado, vale a pena olhar com atenção.`
     );
   }
 
