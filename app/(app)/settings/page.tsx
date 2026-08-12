@@ -1,4 +1,4 @@
-import { getSettings, getCapitalHistory } from "@/lib/queries";
+import { getSettings, getCapitalHistory, getRecentErrorLogs } from "@/lib/queries";
 import {
   setCapitalFormAction,
   updateRuleSettingsFormAction,
@@ -11,10 +11,15 @@ import { Input, Label } from "@/components/ui/input";
 import { SubmitButton } from "@/components/submit-button";
 import { CapitalChart } from "@/components/capital-chart";
 import { TestNotificationButton } from "@/components/test-notification-button";
+import { ErrorLogsTable } from "@/components/error-logs-table";
 import { formatMzn } from "@/lib/utils";
 
 export default async function SettingsPage() {
-  const [config, history] = await Promise.all([getSettings(), getCapitalHistory(50)]);
+  const [config, history, errorLogsList] = await Promise.all([
+    getSettings(),
+    getCapitalHistory(50),
+    getRecentErrorLogs(30),
+  ]);
   const chartHistory = [...history]
     .reverse()
     .map((h) => ({ changedAt: h.changedAt, resultingBalanceMzn: Number(h.resultingBalanceMzn) }));
@@ -221,6 +226,15 @@ export default async function SettingsPage() {
             </li>
           ))}
         </ul>
+      </Card>
+
+      <Card>
+        <CardTitle>Erros recentes</CardTitle>
+        <p className="mb-4 mt-1 text-sm text-[var(--muted)]">
+          Qualquer erro do lado do servidor (varredura falhada, base de dados indisponível, etc.) fica
+          registado aqui automaticamente e dispara um push na hora.
+        </p>
+        <ErrorLogsTable logs={errorLogsList} />
       </Card>
     </div>
   );

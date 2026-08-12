@@ -143,11 +143,6 @@ export default async function SimulacaoPage({
                 ) : null,
               },
               {
-                key: "comparar",
-                label: "Comparar capitais",
-                content: <TrancheKpisChart rows={trancheRows} chosenCapital={chosenCapital} />,
-              },
-              {
                 key: "comerciantes",
                 label: `Por comerciante (${counterpartyRows.length})`,
                 content: (
@@ -159,6 +154,11 @@ export default async function SimulacaoPage({
                     <CounterpartyOptions buySteps={counterparties.buy.steps} rows={counterpartyRows} />
                   </div>
                 ),
+              },
+              {
+                key: "comparar",
+                label: "Comparar capitais",
+                content: <TrancheKpisChart rows={trancheRows} chosenCapital={chosenCapital} />,
               },
             ]}
           />

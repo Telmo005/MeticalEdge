@@ -4,9 +4,9 @@ import { getSettings, getLatestSnapshot, getRecentOpportunities, getTradeStats }
 import { Card, CardLabel, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ScrollTable } from "@/components/ui/scroll-table";
 import { RefreshButton } from "@/components/refresh-button";
 import { ExecutionPlan } from "@/components/execution-plan";
+import { OpportunitiesHistoryTable } from "@/components/dashboard/opportunities-history-table";
 import { formatMzn, formatPct, formatUsdt } from "@/lib/utils";
 
 function timeAgo(date: Date): string {
@@ -22,7 +22,7 @@ export default async function DashboardPage() {
   const [config, snapshot, opportunitiesList, stats] = await Promise.all([
     getSettings(),
     getLatestSnapshot(),
-    getRecentOpportunities(15),
+    getRecentOpportunities(200),
     getTradeStats(),
   ]);
 
@@ -209,34 +209,7 @@ export default async function DashboardPage() {
 
       <section>
         <h2 className="mb-3 text-sm font-semibold text-[var(--muted)]">Histórico de avaliações</h2>
-        <ScrollTable>
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 z-10 bg-[var(--surface-2)] text-left text-xs uppercase text-[var(--muted)] shadow-[0_1px_0_var(--border)]">
-              <tr>
-                <th className="px-3 py-2">Quando</th>
-                <th className="px-3 py-2 text-right">Compra</th>
-                <th className="px-3 py-2 text-right">Venda</th>
-                <th className="px-3 py-2 text-right">Líquido médio</th>
-                <th className="px-3 py-2">Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {opportunitiesList.map((o) => (
-                <tr key={o.id} className="border-t border-[var(--border)]">
-                  <td className="px-3 py-2 text-[var(--muted)]">{timeAgo(new Date(o.detectedAt))}</td>
-                  <td className="tabular px-3 py-2 text-right">{formatMzn(o.buyVwap)}</td>
-                  <td className="tabular px-3 py-2 text-right">{formatMzn(o.sellVwap)}</td>
-                  <td className="tabular px-3 py-2 text-right">{formatPct(o.netPctMedium)}</td>
-                  <td className="px-3 py-2">
-                    <Badge tone={o.status === "alerted" || o.status === "traded" ? "good" : "neutral"}>
-                      {o.status}
-                    </Badge>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </ScrollTable>
+        <OpportunitiesHistoryTable opportunities={opportunitiesList} />
       </section>
     </div>
   );
