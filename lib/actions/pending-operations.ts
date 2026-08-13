@@ -52,12 +52,41 @@ function numOrNull(formData: FormData, key: string): number | null {
 }
 
 export async function startOperationFormAction(formData: FormData) {
+  const capitalUsedMzn = numOrNull(formData, "capitalUsedMzn");
+  const buyPrice = numOrNull(formData, "buyPrice");
+
+  // Validação no servidor, não só no formulário: sem isto era possível
+  // gravar uma operação com capital 0 e preço 0 (o formulário antigo
+  // aceitava-o em silêncio), e ficava para sempre no histórico a estragar
+  // a taxa de sucesso e o lucro médio.
+  if (capitalUsedMzn === null || capitalUsedMzn <= 0) {
+    throw new Error("O valor gasto na compra tem de ser maior do que zero.");
+  }
+  if (buyPrice === null || buyPrice <= 0) {
+    throw new Error("O preço de compra tem de ser maior do que zero.");
+  }
+
+  // A quantidade de USDT deriva sempre dos outros dois valores. Se vier do
+  // formulário e não bater certo, manda a conta — três valores livres que
+  // se contradizem é como o histórico se corrompia antes.
+  const derivedUsdt = capitalUsedMzn / buyPrice;
+  const submittedUsdt = numOrNull(formData, "usdtAmount");
+  const usdtAmount =
+    submittedUsdt !== null && Math.abs(submittedUsdt - derivedUsdt) / derivedUsdt < 0.02
+      ? submittedUsdt
+      : derivedUsdt;
+
+  const targetSellPrice = numOrNull(formData, "targetSellPrice");
+  if (targetSellPrice !== null && targetSellPrice <= 0) {
+    throw new Error("O preço-alvo de venda, se preenchido, tem de ser maior do que zero.");
+  }
+
   await startOperationAction({
     opportunityId: (formData.get("opportunityId") as string) || null,
-    capitalUsedMzn: numOrNull(formData, "capitalUsedMzn") ?? 0,
-    buyPrice: numOrNull(formData, "buyPrice") ?? 0,
-    usdtAmount: numOrNull(formData, "usdtAmount") ?? 0,
-    targetSellPrice: numOrNull(formData, "targetSellPrice"),
+    capitalUsedMzn,
+    buyPrice,
+    usdtAmount,
+    targetSellPrice,
     notes: (formData.get("notes") as string) || null,
   });
 
@@ -141,13 +170,24 @@ export async function finalizeOperationAction(input: FinalizeOperationInput) {
 
 export async function finalizeOperationFormAction(formData: FormData) {
   const id = String(formData.get("id"));
-  const mznReceivedGross = numOrNull(formData, "mznReceivedGross") ?? 0;
+  const sellPrice = numOrNull(formData, "sellPrice");
+  const mznReceivedGross = numOrNull(formData, "mznReceivedGross");
   const feesPaidMzn = numOrNull(formData, "feesPaidMzn") ?? 0;
   const netProfitMzn = numOrNull(formData, "netProfitMzn");
 
+  if (sellPrice === null || sellPrice <= 0) {
+    throw new Error("O preço de venda tem de ser maior do que zero.");
+  }
+  if (mznReceivedGross === null || mznReceivedGross <= 0) {
+    throw new Error("O valor recebido tem de ser maior do que zero.");
+  }
+  if (feesPaidMzn < 0) {
+    throw new Error("As taxas pagas não podem ser negativas.");
+  }
+
   await finalizeOperationAction({
     id,
-    sellPrice: numOrNull(formData, "sellPrice") ?? 0,
+    sellPrice,
     mznReceivedGross,
     feesPaidMzn,
     netProfitMzn,

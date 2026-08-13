@@ -1,10 +1,12 @@
-import { desc, eq, gte, and, isNotNull } from "drizzle-orm";
+import { desc, eq, gte, and, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { settings, snapshots, opportunities, alerts, pendingOperations } from "@/db/schema";
+import { costPreferencesFrom } from "@/lib/cost-prefs";
 import { sendPush, sendSms } from "@/lib/messaging-client";
 import { fetchAllAds } from "@/lib/p2p/binance-client";
 import { normalizeAll } from "@/lib/p2p/orderbook";
-import { evaluateOpportunity } from "@/lib/p2p/analysis";
+import { evaluateOpportunity, netByScenario } from "@/lib/p2p/analysis";
+import { findBestAdPairs, findBestLimitedRoundTrip } from "@/lib/p2p/optimizer";
 import { fetchUsdMznReference } from "@/lib/p2p/reference-price";
 import { buildOpportunityMessage } from "@/lib/p2p/notify-format";
 import { getPriceExtremes, getReferenceDivergenceSignal } from "@/lib/p2p/price-intelligence";
@@ -15,6 +17,9 @@ const PRICE_SIGNAL_MIN_SAMPLES = 30;
 const PRICE_SIGNAL_EPSILON = 0.01;
 
 const NEW_AD_MIN_IMPROVEMENT_PCT = 0.1;
+
+/** Formas de executar a mesma oportunidade, comparadas pelo lucro líquido. */
+type RouteKey = "gulosa" | "par-unico" | "melhor-combinacao";
 
 const REFERENCE_DIVERGENCE_WINDOW_DAYS = 7;
 const REFERENCE_DIVERGENCE_MIN_SAMPLES = 180;
@@ -68,7 +73,19 @@ export async function runMarketScan(): Promise<ScanResult> {
 
   const askAds = normalizeAll(askRaw);
   const bidAds = normalizeAll(bidRaw);
-  const capitalMzn = Number(config.currentCapitalMzn);
+
+  // Só o capital que está mesmo livre. O dinheiro já convertido em USDT à
+  // espera de comprador (pending_operations) não pode ser gasto outra vez —
+  // simular com ele produzia alertas para operações impossíveis de
+  // executar, e o utilizador só descobria isso ao abrir a Binance.
+  const [lockedRow] = await db
+    .select({ lockedMzn: sql<string>`coalesce(sum(${pendingOperations.capitalUsedMzn}), 0)` })
+    .from(pendingOperations)
+    .where(eq(pendingOperations.status, "aguardando_venda"));
+  const lockedMzn = Number(lockedRow?.lockedMzn ?? 0);
+  const capitalMzn = Math.max(0, Number(config.currentCapitalMzn) - lockedMzn);
+
+  const costPrefs = costPreferencesFrom(config);
 
   const evaluation = evaluateOpportunity(askAds, bidAds, capitalMzn, {
     minGrossSpreadPct: Number(config.minGrossSpreadPct),
@@ -76,7 +93,7 @@ export async function runMarketScan(): Promise<ScanResult> {
     minCounterpartyMonthlyOrders: config.minCounterpartyMonthlyOrders,
     maxOrdersPerLeg: config.maxOrdersPerLeg,
     minNetPctAlert: Number(config.minNetPctAlert),
-  });
+  }, costPrefs);
   const { summary, trip, net } = evaluation;
 
   // Ordenados por preço (melhor primeiro) antes de gravar — assim o
@@ -133,30 +150,66 @@ export async function runMarketScan(): Promise<ScanResult> {
     })
     .returning();
 
-  // Notifica sempre que houver QUALQUER lucro líquido positivo com capital
-  // real envolvido — não só quando cumpre todas as regras de segurança
-  // (reputação da contraparte, spread mínimo, etc.). As regras continuam a
-  // classificar a oportunidade como "segura" ou não, mas essa classificação
-  // já não decide sozinha se avisa: quem decide é o utilizador, por isso o
-  // aviso deixa isso bem claro no corpo da mensagem.
+  // --- Decidir se vale a pena avisar -------------------------------------
   //
-  // Adicionalmente (sem substituir a regra acima): também notifica sempre
-  // que o lucro BRUTO ultrapassa o limiar em MZN que o utilizador definiu em
-  // Configurações ("Lucro mínimo a considerar") — mesmo em cenários onde o
-  // líquido médio ainda não é positivo, para não deixar passar despercebida
-  // uma oportunidade grande na origem só porque as taxas a apertam.
-  const hasCapital = trip.buy.inputUsed > 0;
-  const netPositive = hasCapital && net.medio.netMzn > 0;
-  const grossAboveThreshold = hasCapital && trip.grossProfitMzn > Number(config.minDisplayProfitMzn);
-  const isProfitable = netPositive || grossAboveThreshold;
+  // O aviso não depende de a oportunidade cumprir todas as regras de
+  // segurança (reputação da contraparte, spread mínimo). Essas regras
+  // continuam a classificá-la como "segura" ou "com avisos", mas quem decide
+  // se avança é o utilizador — o corpo da mensagem diz-lhe qual é o caso.
+  //
+  // O caminho guloso (comprar do mais barato para cima) não é o único, nem
+  // costuma ser o melhor: um par único comprador/vendedor paga metade das
+  // taxas fixas e executa numa fracção do tempo. E o modo por omissão da
+  // Simulação ("1 comerciante por lado") procura a melhor combinação, não os
+  // anúncios de topo — o alerta tem de olhar para as mesmas hipóteses, senão
+  // avisa de uma coisa e o ecrã mostra outra.
+  const bestPair = findBestAdPairs(askAds, bidAds, capitalMzn, costPrefs, 1)[0] ?? null;
+  const bestSingle = findBestLimitedRoundTrip(
+    askAds,
+    bidAds,
+    capitalMzn,
+    { maxBuyAds: 1, maxSellAds: 1 },
+    costPrefs
+  );
+  const bestSingleNet =
+    bestSingle.buy.inputUsed > 0 && bestSingle.sell.steps.length > 0
+      ? netByScenario(bestSingle, costPrefs).medio.netMzn
+      : null;
+
+  const routes: { key: RouteKey; netMzn: number }[] = [];
+  if (trip.buy.inputUsed > 0 && trip.sell.steps.length > 0) {
+    routes.push({ key: "gulosa", netMzn: net.medio.netMzn });
+  }
+  if (bestPair !== null) routes.push({ key: "par-unico", netMzn: bestPair.netMzn });
+  if (bestSingleNet !== null) routes.push({ key: "melhor-combinacao", netMzn: bestSingleNet });
+
+  const bestRoute = routes.reduce<{ key: RouteKey; netMzn: number } | null>(
+    (best, r) => (best === null || r.netMzn > best.netMzn ? r : best),
+    null
+  );
+
+  const pairBeatsGreedy = bestPair !== null && bestPair.netMzn > net.medio.netMzn + 0.01;
+
+  // O gatilho é o LUCRO LÍQUIDO da melhor rota, contra um limiar em Meticais
+  // definido pelo utilizador (0 por omissão: avisa sempre que sobrar dinheiro
+  // depois de todos os custos).
+  //
+  // Antes o segundo gatilho comparava o lucro BRUTO com o limiar de
+  // apresentação de listas — e chegavam avisos de oportunidades que, depois
+  // das taxas, davam prejuízo. Bruto não é uma promessa; líquido é.
+  const alertThresholdMzn = Number(config.minNetProfitAlertMzn ?? 0);
+  const isProfitable = bestRoute !== null && bestRoute.netMzn > alertThresholdMzn;
 
   let alertSent = false;
   if (isProfitable) {
+    // Cooldown SÓ contra outros alertas de oportunidade. Antes bastava um
+    // aviso de "preço no mínimo recente" ter saído há 3 minutos para este
+    // — o alerta que realmente importa — ficar silenciado a janela toda.
     const cooldownSince = new Date(Date.now() - config.alertCooldownMinutes * 60_000);
     const [recentAlert] = await db
       .select({ id: alerts.id })
       .from(alerts)
-      .where(and(gte(alerts.sentAt, cooldownSince), isNotNull(alerts.opportunityId)))
+      .where(and(gte(alerts.sentAt, cooldownSince), eq(alerts.kind, "oportunidade")))
       .orderBy(desc(alerts.sentAt))
       .limit(1);
 
@@ -167,6 +220,18 @@ export async function runMarketScan(): Promise<ScanResult> {
         net,
         meetsEntryRules: evaluation.meetsEntryRules,
         reasonsBlocked: evaluation.reasonsBlocked,
+        bestNetMzn: bestRoute?.netMzn ?? net.medio.netMzn,
+        thresholdMzn: alertThresholdMzn,
+        betterPair: pairBeatsGreedy && bestPair
+          ? {
+              buyMerchant: bestPair.buyAd.merchantName,
+              buyPrice: bestPair.buyAd.price,
+              sellMerchant: bestPair.sellAd.merchantName,
+              sellPrice: bestPair.sellAd.price,
+              spendMzn: bestPair.spendMzn,
+              netMzn: bestPair.netMzn,
+            }
+          : null,
       });
 
       const pushResult = await sendPush(title, shortBody);
@@ -181,6 +246,7 @@ export async function runMarketScan(): Promise<ScanResult> {
       // completa, sem o limite de 500/1000 caracteres do push/SMS.
       await db.insert(alerts).values({
         opportunityId: opportunity.id,
+        kind: "oportunidade",
         title,
         body: fullBody,
         gatewayMessageId: pushResult.ok ? pushResult.id : null,
@@ -198,7 +264,11 @@ export async function runMarketScan(): Promise<ScanResult> {
   // exigir que ninguém leia gráfico nenhum. Independente do alerta de
   // oportunidade acima: um é "há lucro na viagem completa agora", este é
   // "este lado do mercado está num ponto historicamente bom".
-  async function sendGuardedAlert(title: string, body: string) {
+  async function sendGuardedAlert(
+    title: string,
+    body: string,
+    kind: "sinal_preco" | "operacao_pendente" = "sinal_preco"
+  ) {
     const cooldownSince = new Date(Date.now() - config.alertCooldownMinutes * 60_000);
     const [recent] = await db
       .select({ id: alerts.id })
@@ -215,7 +285,8 @@ export async function runMarketScan(): Promise<ScanResult> {
       smsError = smsResult.ok ? null : smsResult.error;
     }
     await db.insert(alerts).values({
-      opportunityId: opportunity.id,
+      opportunityId: kind === "sinal_preco" ? opportunity.id : null,
+      kind,
       title,
       body,
       gatewayMessageId: pushResult.ok ? pushResult.id : null,
@@ -371,7 +442,8 @@ export async function runMarketScan(): Promise<ScanResult> {
         `Tens ${Number(op.usdtAmount).toFixed(4)} USDT à espera desde ${op.startedAt.toLocaleString("pt-PT")}.\n\n` +
           `Encontrámos ${summary.bestBid.toFixed(2)} MZN/USDT — igual ou melhor do que o teu alvo de ` +
           `${target.toFixed(2)} MZN/USDT.\n\n` +
-          `Abre /operacoes para finalizar a venda.`
+          `Abre /operacoes para finalizar a venda.`,
+        "operacao_pendente"
       );
     }
   }

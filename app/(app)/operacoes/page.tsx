@@ -91,6 +91,19 @@ export default async function OperationsPage() {
                   <p className="mb-4 text-xs text-[var(--muted)]">
                     Melhor comprador agora no mercado: {formatMzn(currentBestBid)}/USDT
                     {target !== null && !reached ? ` — falta ${formatMzn(target - currentBestBid)} para o teu alvo` : ""}
+                    {/* Quanto renderia fechar já: sem isto, decidir entre
+                        esperar e despachar era um cálculo de cabeça. */}
+                    {" · vendendo já: "}
+                    <b
+                      className={
+                        Number(op.usdtAmount) * currentBestBid - Number(op.capitalUsedMzn) >= 0
+                          ? "tabular text-[var(--good)]"
+                          : "tabular text-[var(--critical)]"
+                      }
+                    >
+                      {Number(op.usdtAmount) * currentBestBid - Number(op.capitalUsedMzn) >= 0 ? "+" : ""}
+                      {formatMzn(Number(op.usdtAmount) * currentBestBid - Number(op.capitalUsedMzn))}
+                    </b>
                   </p>
                 ) : null}
 

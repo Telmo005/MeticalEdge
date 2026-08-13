@@ -2,14 +2,16 @@ import { getSettings, getCapitalHistory, getRecentErrorLogs } from "@/lib/querie
 import {
   setCapitalFormAction,
   setMinDisplayProfitFormAction,
+  setMinNetProfitAlertFormAction,
   updateRuleSettingsFormAction,
   resetRuleSettingsFormAction,
   updateAlertChannelsFormAction,
+  updateCostSettingsFormAction,
 } from "@/lib/actions/settings";
 import { clearErrorLogsFormAction } from "@/lib/actions/error-logs";
 import { RECOMMENDED_RULE_DEFAULTS } from "@/lib/rule-defaults";
 import { Card, CardTitle } from "@/components/ui/card";
-import { Input, Label } from "@/components/ui/input";
+import { Input, InputWithSuffix, Label, Select } from "@/components/ui/input";
 import { SubmitButton } from "@/components/submit-button";
 import { CapitalChart } from "@/components/capital-chart";
 import { TestNotificationButton } from "@/components/test-notification-button";
@@ -79,6 +81,89 @@ export default async function SettingsPage() {
             />
           </div>
           <SubmitButton pendingText="A guardar...">Guardar</SubmitButton>
+        </form>
+      </Card>
+
+      <Card>
+        <CardTitle>Quando avisar-te</CardTitle>
+        <p className="mb-4 mt-1 text-sm text-[var(--muted)]">
+          Recebes um alerta sempre que a melhor forma de executar render, no mínimo, este valor de lucro
+          <b> líquido</b> — já depois das taxas da Binance e do custo de transferir dinheiro. Zero significa
+          avisar sempre que sobrar dinheiro real. Sobe o valor se estiveres a receber alertas de mais para
+          operações pequenas demais para valerem a interrupção.
+        </p>
+        <form action={setMinNetProfitAlertFormAction} className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="minNetProfitAlertMzn">Lucro líquido mínimo para avisar</Label>
+            <InputWithSuffix
+              id="minNetProfitAlertMzn"
+              name="minNetProfitAlertMzn"
+              type="number"
+              step="1"
+              min="0"
+              suffix="MZN"
+              defaultValue={config?.minNetProfitAlertMzn ?? undefined}
+              className="w-full sm:w-56"
+            />
+          </div>
+          <SubmitButton pendingText="A guardar...">Guardar</SubmitButton>
+        </form>
+        <p className="mt-3 text-xs text-[var(--muted)]">
+          Isto é diferente de &ldquo;Lucro mínimo a considerar&rdquo; acima: esse filtra o que aparece nas
+          listas dentro da app, este decide se o telemóvel toca.
+        </p>
+      </Card>
+
+      <Card>
+        <CardTitle>Custo real de mover dinheiro</CardTitle>
+        <p className="mb-4 mt-1 text-sm text-[var(--muted)]">
+          Cada ordem P2P envolve uma transferência de Meticais, e isso custa dinheiro. Até aqui o cálculo de
+          lucro só descontava a taxa da Binance e tratava as transferências como grátis — o que tornava todos
+          os lucros mostrados optimistas. Numa operação de 5.000 MZN a diferença ronda os 30 MZN, muitas
+          vezes mais do que a margem inteira.
+        </p>
+        <form action={updateCostSettingsFormAction} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="costRail">Como pagas e recebes</Label>
+            <Select id="costRail" name="costRail" defaultValue={config?.costRail ?? "mpesa"}>
+              <option value="mpesa">M-Pesa</option>
+              <option value="emola">e-Mola</option>
+              <option value="nenhum">Transferência sem custo (banco próprio, saldo interno)</option>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="transfersPerOrder">Transferências por ordem</Label>
+            <InputWithSuffix
+              id="transfersPerOrder"
+              name="transfersPerOrder"
+              type="number"
+              min="1"
+              max="10"
+              step="1"
+              suffix="envios"
+              defaultValue={config?.transfersPerOrder ?? 1}
+            />
+            <p className="text-xs text-[var(--muted)]">
+              Alguns comerciantes pedem o valor repartido em vários envios — e cada envio paga a sua taxa de
+              escalão.
+            </p>
+          </div>
+          <div className="col-span-1 flex items-start gap-2 sm:col-span-2">
+            <input
+              id="includeCashOut"
+              name="includeCashOut"
+              type="checkbox"
+              defaultChecked={config?.includeCashOut}
+              className="mt-0.5 h-4 w-4"
+            />
+            <Label htmlFor="includeCashOut" className="normal-case">
+              Contar também o levantamento no fim de cada operação. Deixa desligado se reinvestes o saldo em
+              vez de o levantares — que é o caso normal de quem opera em ciclo.
+            </Label>
+          </div>
+          <div className="col-span-1 sm:col-span-2">
+            <SubmitButton pendingText="A guardar...">Guardar custos</SubmitButton>
+          </div>
         </form>
       </Card>
 

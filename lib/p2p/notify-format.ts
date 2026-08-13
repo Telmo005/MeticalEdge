@@ -1,6 +1,5 @@
 import type { FillStep } from "@/lib/p2p/orderbook";
-import type { RoundTrip, NetScenario } from "@/lib/p2p/analysis";
-import type { CostScenario } from "@/lib/p2p/fees";
+import type { RoundTrip, NetByScenario } from "@/lib/p2p/analysis";
 import { reputationLabel } from "@/lib/reputation";
 
 const PUSH_MAX_STEPS_PER_LEG = 4;
@@ -43,20 +42,46 @@ function formatStepsBlock(steps: FillStep[], maxLines = PUSH_MAX_STEPS_PER_LEG):
  * nunca tudo espremido numa única frase — e ambos mostram sempre o valor
  * final ("ficas com X MZN"), não só a variação de lucro/prejuízo.
  */
+export type BetterPairSummary = {
+  buyMerchant: string;
+  buyPrice: number;
+  sellMerchant: string;
+  sellPrice: number;
+  spendMzn: number;
+  netMzn: number;
+};
+
 export function buildOpportunityMessage({
   capitalMzn,
   trip,
   net,
   meetsEntryRules,
   reasonsBlocked,
+  betterPair = null,
+  bestNetMzn,
+  thresholdMzn = 0,
 }: {
   capitalMzn: number;
   trip: RoundTrip;
-  net: Record<CostScenario["label"], NetScenario>;
+  net: NetByScenario;
   meetsEntryRules: boolean;
   reasonsBlocked: string[];
+  /** Alternativa de uma ordem por perna que rende mais do que o caminho
+   *  guloso descrito acima — quando existe, é ela que deve ser executada. */
+  betterPair?: BetterPairSummary | null;
+  /** Lucro líquido da MELHOR forma de executar, seja ela qual for. É este o
+   *  número que decidiu enviar o aviso, por isso é este que vai no título —
+   *  antes o título dizia só "oportunidade" e obrigava a abrir para saber
+   *  se valia dois Meticais ou duzentos. */
+  bestNetMzn?: number;
+  /** Limiar configurado em /settings, para o corpo poder explicar porque é
+   *  que este aviso passou. */
+  thresholdMzn?: number;
 }): { title: string; fullBody: string; shortBody: string } {
-  const title = meetsEntryRules ? "Oportunidade segura de lucro" : "Oportunidade de lucro (com avisos)";
+  const headline = bestNetMzn ?? net.medio.netMzn;
+  const title = meetsEntryRules
+    ? `Lucro de ${headline.toFixed(0)} MZN — dentro das regras`
+    : `Lucro de ${headline.toFixed(0)} MZN — com avisos`;
 
   const spentMzn = trip.buy.inputUsed;
   const receivedGrossMzn = trip.sell.outputAmount;
@@ -90,7 +115,31 @@ export function buildOpportunityMessage({
     `Cenário conservador: ${net.conservador.netMzn.toFixed(2)} MZN (${net.conservador.netPct.toFixed(3)}%)`,
     `Cenário médio: ${net.medio.netMzn.toFixed(2)} MZN (${net.medio.netPct.toFixed(3)}%)`,
     `Cenário optimista: ${net.otimista.netMzn.toFixed(2)} MZN (${net.otimista.netPct.toFixed(3)}%)`,
+    "",
+    "CUSTOS (cenário médio):",
+    `- Taxas Binance: ${net.medio.costs.takerFeeMzn.toFixed(2)} MZN`,
+    net.medio.costs.railSendFeeMzn > 0
+      ? `- Transferências de dinheiro: ${net.medio.costs.railSendFeeMzn.toFixed(2)} MZN`
+      : null,
+    net.medio.costs.railWithdrawFeeMzn > 0
+      ? `- Levantamento: ${net.medio.costs.railWithdrawFeeMzn.toFixed(2)} MZN`
+      : null,
+    `- Total: ${net.medio.costs.totalMzn.toFixed(2)} MZN`,
+    "",
+    thresholdMzn > 0
+      ? `Avisado porque o lucro líquido passa o teu limiar de ${thresholdMzn.toFixed(2)} MZN.`
+      : "Avisado porque sobra dinheiro depois de todos os custos.",
   ].filter((line): line is string => line !== null);
+
+  if (betterPair) {
+    fullLines.push(
+      "",
+      "MELHOR ALTERNATIVA — uma ordem de cada lado:",
+      `Compra ${betterPair.spendMzn.toFixed(2)} MZN a ${betterPair.buyMerchant} (${betterPair.buyPrice.toFixed(2)} MZN/USDT)`,
+      `Vende a ${betterPair.sellMerchant} (${betterPair.sellPrice.toFixed(2)} MZN/USDT)`,
+      `Lucro: ${betterPair.netMzn.toFixed(2)} MZN — mais do que o plano acima, com metade das ordens.`
+    );
+  }
   if (!meetsEntryRules) {
     fullLines.push("", "⚠ Avisos:", ...reasonsBlocked.map((r) => `- ${r}`));
   }
@@ -106,6 +155,9 @@ export function buildOpportunityMessage({
     `Gastas ${spentMzn.toFixed(0)} MZN → Ficas com ${finalTotalMzn.toFixed(0)} MZN`,
     `Resultado: ${net.medio.netMzn >= 0 ? "+" : ""}${net.medio.netMzn.toFixed(0)} MZN de ${resultLabel} (${net.medio.netPct.toFixed(2)}%)`,
     hasUnusedCapital ? `(de ${capitalMzn.toFixed(0)} MZN disponíveis, só ${spentMzn.toFixed(0)} coube nos anúncios)` : null,
+    betterPair
+      ? `\nMELHOR: ${betterPair.buyMerchant} -> ${betterPair.sellMerchant}, ${betterPair.spendMzn.toFixed(0)} MZN, +${betterPair.netMzn.toFixed(0)} MZN em 2 ordens.`
+      : null,
   ].filter((line): line is string => line !== null);
   if (!meetsEntryRules) {
     shortLines.push("", `⚠ Aviso: ${reasonsBlocked[0]}${reasonsBlocked.length > 1 ? ` (+${reasonsBlocked.length - 1})` : ""}`);

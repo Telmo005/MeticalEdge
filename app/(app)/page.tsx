@@ -1,6 +1,17 @@
 import Link from "next/link";
 import { CheckCircle2, XCircle, Info } from "lucide-react";
-import { getSettings, getLatestSnapshot, getRecentOpportunities, getTradeStats, getPendingOperations } from "@/lib/queries";
+import {
+  getSettings,
+  getLatestSnapshot,
+  getRecentOpportunities,
+  getTradeStats,
+  getPendingOperations,
+  getCapitalPosition,
+} from "@/lib/queries";
+import { costPreferencesFrom } from "@/lib/cost-prefs";
+import { findBestAdPairs } from "@/lib/p2p/optimizer";
+import { getTimingInsight } from "@/lib/p2p/patterns";
+import { TimingCard } from "@/components/dashboard/timing-card";
 import { Card, CardLabel, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,11 +40,12 @@ export default async function DashboardPage() {
     return <OnboardingWelcome />;
   }
 
-  const [snapshot, opportunitiesList, stats, pendingOps] = await Promise.all([
+  const [snapshot, opportunitiesList, stats, pendingOps, capital] = await Promise.all([
     getLatestSnapshot(),
     getRecentOpportunities(200),
     getTradeStats(),
     getPendingOperations(),
+    getCapitalPosition(),
   ]);
 
   const [priceExtremes, askLifecycle, bidLifecycle, divergence, priceHistory] = await Promise.all([
@@ -49,6 +61,17 @@ export default async function DashboardPage() {
   ]);
 
   const latestOpportunity = opportunitiesList[0] ?? null;
+
+  // Padrões de hora/dia a partir do histórico já guardado, e a melhor
+  // combinação "compro a este, vendo àquele" com o capital que está mesmo
+  // livre — dois motores de lucro que a app não tinha.
+  const timing = await getTimingInsight(30);
+  const costPrefs = costPreferencesFrom(config);
+  const bestPair =
+    snapshot && capital.availableMzn > 0
+      ? findBestAdPairs(snapshot.askAds ?? [], snapshot.bidAds ?? [], capital.availableMzn, costPrefs, 1)[0] ??
+        null
+      : null;
 
   return (
     <div className="flex flex-col gap-8">
@@ -129,19 +152,88 @@ export default async function DashboardPage() {
               </div>
             </Card>
             <Card>
-              <CardLabel>Capital configurado</CardLabel>
-              <div className="tabular text-xl">{formatMzn(config?.currentCapitalMzn)}</div>
-              <Link href="/settings" className="mt-1 inline-block text-xs text-[var(--accent-2)] hover:underline">
-                alterar
-              </Link>
+              <CardLabel>Livre para operar</CardLabel>
+              <div className="tabular text-xl">{formatMzn(capital.availableMzn)}</div>
+              {capital.lockedMzn > 0 ? (
+                <p className="mt-1 text-xs text-[var(--muted)]">
+                  {formatMzn(capital.lockedMzn)} presos em operações por fechar
+                </p>
+              ) : (
+                <Link href="/settings" className="mt-1 inline-block text-xs text-[var(--accent-2)] hover:underline">
+                  alterar
+                </Link>
+              )}
             </Card>
           </div>
         )}
       </section>
 
+      {bestPair ? (
+        <section>
+          <h2 className="mb-3 text-sm font-semibold text-[var(--muted)]">Melhor jogada neste momento</h2>
+          <Card className="border-l-4 border-l-[var(--good)]">
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <CardTitle className="text-base">Uma ordem de cada lado</CardTitle>
+                <p className="mt-1 text-sm text-[var(--muted)]">
+                  Comprar a um comerciante e vender a outro, sem repartir — metade das taxas fixas e muito
+                  menos tempo exposto ao mercado. A varredura clássica não testa estas combinações.
+                </p>
+              </div>
+              <div className="text-right">
+                <CardLabel>Lucro líquido</CardLabel>
+                <div className="tabular text-xl font-bold text-[var(--good)]">
+                  +{formatMzn(bestPair.netMzn)}
+                </div>
+                <p className="text-xs text-[var(--muted)]">{formatPct(bestPair.netPct)}</p>
+              </div>
+            </div>
+
+            <div className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <div>
+                <CardLabel>Compras a</CardLabel>
+                <div className="truncate text-sm font-medium">{bestPair.buyAd.merchantName}</div>
+                <div className="tabular text-xs text-[var(--muted)]">
+                  {formatMzn(bestPair.buyAd.price)}/USDT
+                </div>
+              </div>
+              <div>
+                <CardLabel>Vendes a</CardLabel>
+                <div className="truncate text-sm font-medium">{bestPair.sellAd.merchantName}</div>
+                <div className="tabular text-xs text-[var(--muted)]">
+                  {formatMzn(bestPair.sellAd.price)}/USDT
+                </div>
+              </div>
+              <div>
+                <CardLabel>Valor a negociar</CardLabel>
+                <div className="tabular text-sm">{formatMzn(bestPair.spendMzn)}</div>
+                <div className="tabular text-xs text-[var(--muted)]">{formatUsdt(bestPair.usdtAmount)}</div>
+              </div>
+              <div>
+                <CardLabel>Diferença de preço</CardLabel>
+                <div className="tabular text-sm">{formatPct(bestPair.spreadPct)}</div>
+              </div>
+            </div>
+
+            <Link href={`/simulacao?capital=${Math.round(bestPair.spendMzn)}&modo=equilibrado-1`}>
+              <Button variant="secondary">Ver plano completo na simulação</Button>
+            </Link>
+          </Card>
+        </section>
+      ) : null}
+
       {snapshot ? (
         <section>
           <PriceHistoryChart points={priceHistory} hours={24} />
+        </section>
+      ) : null}
+
+      {timing.reliable ? (
+        <section>
+          <h2 className="mb-3 text-sm font-semibold text-[var(--muted)]">
+            Quando é que este mercado costuma estar bom
+          </h2>
+          <TimingCard timing={timing} />
         </section>
       ) : null}
 

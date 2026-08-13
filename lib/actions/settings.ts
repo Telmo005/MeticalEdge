@@ -54,6 +54,60 @@ export async function setMinDisplayProfitFormAction(formData: FormData) {
   revalidatePath("/", "layout");
 }
 
+/**
+ * Custo real de mover Meticais. Isto não é cosmético: sem estes valores o
+ * lucro apresentado era sistematicamente optimista, porque só descontava a
+ * taxa da Binance e fingia que as transferências de M-Pesa/e-Mola eram
+ * grátis. Numa operação de 5.000 MZN a diferença é da ordem de 30 MZN — mais
+ * do que a margem inteira de muitas oportunidades.
+ */
+export async function updateCostSettingsFormAction(formData: FormData) {
+  await requireUser();
+
+  const rawRail = String(formData.get("costRail") ?? "mpesa");
+  const costRail = (["nenhum", "mpesa", "emola"] as const).includes(rawRail as "nenhum" | "mpesa" | "emola")
+    ? (rawRail as "nenhum" | "mpesa" | "emola")
+    : "mpesa";
+
+  const transfersRaw = Number(formData.get("transfersPerOrder"));
+  const transfersPerOrder = Number.isFinite(transfersRaw)
+    ? Math.min(10, Math.max(1, Math.round(transfersRaw)))
+    : 1;
+
+  await db
+    .update(settings)
+    .set({
+      costRail,
+      includeCashOut: formData.get("includeCashOut") === "on",
+      transfersPerOrder,
+      updatedAt: new Date(),
+    })
+    .where(eq(settings.id, true));
+
+  revalidatePath("/", "layout");
+}
+
+/**
+ * Quando é que o sistema deve avisar. Em Meticais de lucro LÍQUIDO, porque
+ * é essa a pergunta real ("vale a pena largar o que estou a fazer por
+ * isto?") — e porque o gatilho anterior olhava para o lucro bruto, o que
+ * fazia chegar avisos de oportunidades que davam prejuízo depois das taxas.
+ */
+export async function setMinNetProfitAlertFormAction(formData: FormData) {
+  await requireUser();
+  const value = Number(formData.get("minNetProfitAlertMzn"));
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error("O lucro mínimo para avisar tem de ser zero ou mais.");
+  }
+
+  await db
+    .update(settings)
+    .set({ minNetProfitAlertMzn: value.toFixed(2), updatedAt: new Date() })
+    .where(eq(settings.id, true));
+
+  revalidatePath("/", "layout");
+}
+
 export type RuleSettingsInput = {
   minNetPctAlert: number;
   minGrossSpreadPct: number;
