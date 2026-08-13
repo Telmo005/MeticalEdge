@@ -2,8 +2,7 @@ import { notFound } from "next/navigation";
 import { getPendingOperationById, getLatestSnapshot } from "@/lib/queries";
 import { finalizeOperationFormAction } from "@/lib/actions/pending-operations";
 import { Card, CardLabel } from "@/components/ui/card";
-import { Input, Label } from "@/components/ui/input";
-import { SubmitButton } from "@/components/submit-button";
+import { FinalizeOperationForm } from "@/components/operacoes/finalize-operation-form";
 import { formatMzn, formatUsdt } from "@/lib/utils";
 
 export default async function FinalizeOperationPage({
@@ -26,8 +25,14 @@ export default async function FinalizeOperationPage({
     );
   }
 
-  const suggestedSellPrice = snapshot?.bestBid ? Number(snapshot.bestBid) : Number(operation.targetSellPrice ?? 0);
-  const suggestedGross = suggestedSellPrice * Number(operation.usdtAmount);
+  const usdtAmount = Number(operation.usdtAmount);
+  const capitalUsedMzn = Number(operation.capitalUsedMzn);
+  const targetSellPrice = operation.targetSellPrice ? Number(operation.targetSellPrice) : null;
+
+  // Preferimos o mercado de agora ao alvo teórico: quem acabou de vender
+  // vendeu perto do melhor comprador do momento.
+  const bestBid = snapshot?.bestBid ? Number(snapshot.bestBid) : 0;
+  const suggestedSellPrice = bestBid || targetSellPrice || Number(operation.buyPrice);
 
   return (
     <div className="flex flex-col gap-6">
@@ -42,65 +47,20 @@ export default async function FinalizeOperationPage({
       <Card>
         <CardLabel>Compra já registada</CardLabel>
         <p className="text-sm text-[var(--muted)]">
-          Compraste {formatUsdt(operation.usdtAmount)} a {formatMzn(operation.buyPrice)}/USDT, usando{" "}
-          {formatMzn(operation.capitalUsedMzn)}. Em espera há{" "}
+          Compraste {formatUsdt(usdtAmount)} a {formatMzn(operation.buyPrice)}/USDT, usando{" "}
+          {formatMzn(capitalUsedMzn)}. Em espera há{" "}
           {Math.floor((Date.now() - new Date(operation.startedAt).getTime()) / 60000)} minutos.
         </p>
       </Card>
 
-      <form action={finalizeOperationFormAction} className="flex flex-col gap-4">
-        <input type="hidden" name="id" value={operation.id} />
-
-        <div className="grid grid-cols-2 gap-4">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="sellPrice">Preço de venda (MZN/USDT)</Label>
-            <Input
-              id="sellPrice"
-              name="sellPrice"
-              type="number"
-              step="0.0001"
-              required
-              defaultValue={suggestedSellPrice || undefined}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="mznReceivedGross">Recebeste no total, bruto (MZN)</Label>
-            <Input
-              id="mznReceivedGross"
-              name="mznReceivedGross"
-              type="number"
-              step="0.01"
-              required
-              defaultValue={suggestedGross ? suggestedGross.toFixed(2) : undefined}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="feesPaidMzn">Taxas pagas (MZN)</Label>
-            <Input id="feesPaidMzn" name="feesPaidMzn" type="number" step="0.01" defaultValue="0" />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="netProfitMzn">Lucro líquido real (MZN)</Label>
-            <Input id="netProfitMzn" name="netProfitMzn" type="number" step="0.01" />
-            <p className="text-xs text-[var(--muted)]">
-              Se deixares em branco, calcula-se automaticamente: (recebido − gasto na compra) − taxas.
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="notes">Notas</Label>
-          <textarea
-            id="notes"
-            name="notes"
-            rows={3}
-            className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm"
-          />
-        </div>
-
-        <SubmitButton pendingText="A finalizar..." className="self-start">
-          Finalizar operação
-        </SubmitButton>
-      </form>
+      <FinalizeOperationForm
+        action={finalizeOperationFormAction}
+        operationId={operation.id}
+        usdtAmount={usdtAmount}
+        capitalUsedMzn={capitalUsedMzn}
+        suggestedSellPrice={suggestedSellPrice}
+        targetSellPrice={targetSellPrice}
+      />
     </div>
   );
 }

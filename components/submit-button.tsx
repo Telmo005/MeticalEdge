@@ -17,6 +17,7 @@ export function SubmitButton({
   pendingText,
   className,
   variant = "primary",
+  disabled = false,
   formAction,
   confirmMessage,
 }: {
@@ -24,6 +25,10 @@ export function SubmitButton({
   pendingText: string;
   className?: string;
   variant?: "primary" | "secondary" | "ghost" | "danger";
+  /** Bloqueia a submissão enquanto o formulário estiver incompleto — sem
+   *  isto era possível gravar operações com zeros, que ficavam para sempre
+   *  no histórico a estragar a taxa de sucesso e o lucro médio. */
+  disabled?: boolean;
   formAction?: (formData: FormData) => void | Promise<void>;
   /** Se definido, pede confirmação nativa antes de submeter — para ações
    *  que desfazem trabalho manual (ex.: repor valores recomendados). */
@@ -37,7 +42,7 @@ export function SubmitButton({
         type="submit"
         variant={variant}
         formAction={formAction}
-        disabled={pending}
+        disabled={pending || disabled}
         className={cn(className)}
         onClick={(e) => {
           if (confirmMessage && !window.confirm(confirmMessage)) {

@@ -42,6 +42,7 @@ export async function sendTestNotificationAction(): Promise<TestNotificationResu
 
   await db.insert(alerts).values({
     opportunityId: null,
+    kind: "teste",
     title,
     body: `${body} (teste manual)`,
     gatewayMessageId: pushResult.ok ? pushResult.id : null,

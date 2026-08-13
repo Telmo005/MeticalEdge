@@ -1,16 +1,60 @@
-import { getOpportunityById } from "@/lib/queries";
+import { getOpportunityById, getLatestSnapshot, getCapitalPosition, getSettings } from "@/lib/queries";
 import { startOperationFormAction } from "@/lib/actions/pending-operations";
+import { costPreferencesFrom } from "@/lib/cost-prefs";
+import { computeCosts, MEDIO } from "@/lib/p2p/fees";
 import { Card, CardLabel } from "@/components/ui/card";
-import { Input, Label } from "@/components/ui/input";
-import { SubmitButton } from "@/components/submit-button";
+import { StartOperationForm } from "@/components/operacoes/start-operation-form";
 
 export default async function NewOperationPage({
   searchParams,
 }: {
-  searchParams: Promise<{ opportunityId?: string }>;
+  searchParams: Promise<{ opportunityId?: string; capital?: string; buyPrice?: string; target?: string }>;
 }) {
-  const { opportunityId } = await searchParams;
-  const opportunity = opportunityId ? await getOpportunityById(opportunityId) : null;
+  const params = await searchParams;
+  const [opportunity, snapshot, capital, config] = await Promise.all([
+    params.opportunityId ? getOpportunityById(params.opportunityId) : Promise.resolve(null),
+    getLatestSnapshot(),
+    getCapitalPosition(),
+    getSettings(),
+  ]);
+
+  const bestBid = snapshot?.bestBid == null ? null : Number(snapshot.bestBid);
+  const bestAsk = snapshot?.bestAsk == null ? null : Number(snapshot.bestAsk);
+
+  const numParam = (v: string | undefined) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+
+  // Os valores podem vir de três sítios, por ordem de confiança: o link, a
+  // oportunidade avaliada, ou o mercado de agora. Antes só a oportunidade
+  // contava, e chegar aqui pela navegação normal deixava tudo vazio.
+  const defaults = {
+    capitalUsedMzn:
+      numParam(params.capital) ??
+      (opportunity?.capitalMzn ? Number(opportunity.capitalMzn) : null) ??
+      (capital.availableMzn > 0 ? capital.availableMzn : null),
+    buyPrice:
+      numParam(params.buyPrice) ?? (opportunity?.buyVwap ? Number(opportunity.buyVwap) : null) ?? bestAsk,
+    usdtAmount: opportunity?.usdtAmount ? Number(opportunity.usdtAmount) : null,
+    targetSellPrice:
+      numParam(params.target) ?? (opportunity?.sellVwap ? Number(opportunity.sellVwap) : null) ?? bestBid,
+  };
+
+  // Custo aproximado de uma ordem, no cenário médio — o formulário usa isto
+  // para calcular ao vivo o preço a que a operação empata.
+  const prefs = costPreferencesFrom(config);
+  const oneOrderCost = computeCosts(
+    MEDIO,
+    {
+      takerOrders: 1,
+      avgPriceMzn: defaults.buyPrice ?? bestAsk ?? 1,
+      buyVolumeMzn: defaults.capitalUsedMzn ?? 0,
+      sellVolumeMzn: 0,
+      buyTransfers: 1,
+    },
+    prefs
+  ).totalMzn;
 
   return (
     <div className="flex flex-col gap-6">
@@ -28,78 +72,19 @@ export default async function NewOperationPage({
           <CardLabel>Pré-preenchido a partir da oportunidade avaliada</CardLabel>
           <p className="text-sm text-[var(--muted)]">
             Os valores abaixo vêm da simulação — ajusta-os para o que realmente aconteceu na compra antes de
-            gravar.
+            gravar. Se gravares a simulação em vez da realidade, o histórico de lucro deixa de valer nada.
           </p>
         </Card>
       ) : null}
 
-      <form action={startOperationFormAction} className="flex flex-col gap-4">
-        <input type="hidden" name="opportunityId" value={opportunity?.id ?? ""} />
-
-        <div className="grid grid-cols-2 gap-4">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="capitalUsedMzn">Capital gasto na compra (MZN)</Label>
-            <Input
-              id="capitalUsedMzn"
-              name="capitalUsedMzn"
-              type="number"
-              step="0.01"
-              required
-              defaultValue={opportunity?.capitalMzn ?? undefined}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="buyPrice">Preço de compra (MZN/USDT)</Label>
-            <Input
-              id="buyPrice"
-              name="buyPrice"
-              type="number"
-              step="0.0001"
-              required
-              defaultValue={opportunity?.buyVwap ?? undefined}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="usdtAmount">USDT comprado</Label>
-            <Input
-              id="usdtAmount"
-              name="usdtAmount"
-              type="number"
-              step="0.00000001"
-              required
-              defaultValue={opportunity?.usdtAmount ?? undefined}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="targetSellPrice">Preço de venda a que valia a pena (MZN/USDT)</Label>
-            <Input
-              id="targetSellPrice"
-              name="targetSellPrice"
-              type="number"
-              step="0.0001"
-              defaultValue={opportunity?.sellVwap ?? undefined}
-            />
-            <p className="text-xs text-[var(--muted)]">
-              O sistema avisa-te quando aparecer um comprador a este preço ou melhor. Deixa em branco se não
-              tiveres a certeza.
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="notes">Notas</Label>
-          <textarea
-            id="notes"
-            name="notes"
-            rows={3}
-            className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm"
-          />
-        </div>
-
-        <SubmitButton pendingText="A iniciar..." className="self-start">
-          Iniciar operação — ficar em espera para vender
-        </SubmitButton>
-      </form>
+      <StartOperationForm
+        action={startOperationFormAction}
+        defaults={defaults}
+        opportunityId={opportunity?.id ?? null}
+        availableCapitalMzn={capital.availableMzn}
+        currentBestBid={bestBid}
+        estimatedFeeMznPerOrder={oneOrderCost}
+      />
     </div>
   );
 }

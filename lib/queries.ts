@@ -22,6 +22,33 @@ export async function getRecentOpportunities(limit = 20) {
   return db.select().from(opportunities).orderBy(desc(opportunities.detectedAt)).limit(limit);
 }
 
+/**
+ * Versão sem a coluna `detail` (o plano de execução completo, em JSONB).
+ * O painel carregava 200 oportunidades COM esse JSON só para desenhar uma
+ * tabela de cinco colunas que não o usa — dezenas de megabytes de anúncios
+ * lidos e serializados a cada visita à página inicial.
+ */
+export async function getRecentOpportunitiesSummary(limit = 100) {
+  return db
+    .select({
+      id: opportunities.id,
+      detectedAt: opportunities.detectedAt,
+      capitalMzn: opportunities.capitalMzn,
+      buyVwap: opportunities.buyVwap,
+      sellVwap: opportunities.sellVwap,
+      netProfitMediumMzn: opportunities.netProfitMediumMzn,
+      netPctMedium: opportunities.netPctMedium,
+      nOrders: opportunities.nOrders,
+      meetsEntryRules: opportunities.meetsEntryRules,
+      status: opportunities.status,
+    })
+    .from(opportunities)
+    .orderBy(desc(opportunities.detectedAt))
+    .limit(limit);
+}
+
+export type OpportunitySummary = Awaited<ReturnType<typeof getRecentOpportunitiesSummary>>[number];
+
 export async function getOpportunityById(id: string) {
   const [row] = await db.select().from(opportunities).where(eq(opportunities.id, id)).limit(1);
   return row ?? null;
@@ -68,6 +95,44 @@ export async function getRecentFinishedOperations(limit = 20) {
     .where(sql`${pendingOperations.status} != 'aguardando_venda'`)
     .orderBy(desc(pendingOperations.finalizedAt))
     .limit(limit);
+}
+
+export type CapitalPosition = {
+  /** O que está configurado em /settings. */
+  totalMzn: number;
+  /** Preso em operações já compradas e ainda por vender. */
+  lockedMzn: number;
+  /** O que sobra para uma operação nova — é isto que o motor deve usar. */
+  availableMzn: number;
+  lockedOperations: number;
+};
+
+/**
+ * O capital não é um número só. Enquanto uma compra está à espera de
+ * comprador, esse dinheiro já saiu — está em USDT, não em Meticais — mas o
+ * sistema continuava a simular e a alertar como se estivesse todo
+ * disponível. Resultado: alertas para operações impossíveis de executar, e
+ * um "capital configurado" no cabeçalho que não correspondia à realidade.
+ */
+export async function getCapitalPosition(): Promise<CapitalPosition> {
+  const [config] = await db.select().from(settings).where(eq(settings.id, true)).limit(1);
+  const [locked] = await db
+    .select({
+      lockedMzn: sql<string>`coalesce(sum(${pendingOperations.capitalUsedMzn}), 0)`,
+      n: sql<number>`count(*)`,
+    })
+    .from(pendingOperations)
+    .where(eq(pendingOperations.status, "aguardando_venda"));
+
+  const totalMzn = Number(config?.currentCapitalMzn ?? 0);
+  const lockedMzn = Number(locked?.lockedMzn ?? 0);
+
+  return {
+    totalMzn,
+    lockedMzn,
+    availableMzn: Math.max(0, totalMzn - lockedMzn),
+    lockedOperations: Number(locked?.n ?? 0),
+  };
 }
 
 export async function getTradeStats() {

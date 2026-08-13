@@ -37,6 +37,17 @@ export const settings = meticalEdge.table("settings", {
   maxOrdersPerLeg: integer("max_orders_per_leg").notNull().default(3),
   alertCooldownMinutes: integer("alert_cooldown_minutes").notNull().default(20),
   scanningEnabled: boolean("scanning_enabled").notNull().default(true),
+  /** Via usada para mover Meticais nas ordens P2P. Move o cálculo de lucro
+   *  de "só taxa da Binance" para o custo real: transferir e levantar
+   *  dinheiro móvel custa dinheiro e antes era simplesmente ignorado
+   *  (lib/p2p/fees.ts tinha as tabelas e ninguém as chamava). */
+  costRail: text("cost_rail", { enum: ["nenhum", "mpesa", "emola"] }).notNull().default("mpesa"),
+  /** Contar o levantamento do dinheiro no fim de cada operação. Falso por
+   *  omissão: quem opera em ciclo deixa o saldo na carteira. */
+  includeCashOut: boolean("include_cash_out").notNull().default(false),
+  /** Transferências por ordem — alguns comerciantes pedem o valor
+   *  repartido, e cada envio paga a sua taxa de escalão. */
+  transfersPerOrder: integer("transfers_per_order").notNull().default(1),
   /** Alerta por SMS além do push — precisa de um número E.164 (+258...).
    *  Desligado por omissão até haver um número configurado. */
   smsAlertsEnabled: boolean("sms_alerts_enabled").notNull().default(false),
@@ -103,6 +114,14 @@ export const alerts = meticalEdge.table("alerts", {
   opportunityId: uuid("opportunity_id").references(() => opportunities.id, { onDelete: "set null" }),
   sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
   channel: text("channel").notNull().default("push"),
+  /** Que tipo de aviso é este. Existe porque o cooldown era partilhado por
+   *  TODOS os alertas: um aviso de "preço no mínimo recente" bloqueava, à
+   *  janela inteira de cooldown, o aviso da oportunidade de arbitragem que
+   *  aparecia logo a seguir — exactamente o alerta que interessa. Agora
+   *  cada tipo tem o seu próprio cooldown. */
+  kind: text("kind", { enum: ["oportunidade", "sinal_preco", "operacao_pendente", "teste"] })
+    .notNull()
+    .default("oportunidade"),
   title: text("title").notNull(),
   body: text("body").notNull(),
   gatewayMessageId: text("gateway_message_id"),
@@ -112,6 +131,7 @@ export const alerts = meticalEdge.table("alerts", {
   readAt: timestamp("read_at", { withTimezone: true }),
 }, (t) => [
   index("alerts_sent_at_idx").on(t.sentAt.desc()),
+  index("alerts_kind_sent_at_idx").on(t.kind, t.sentAt.desc()),
 ]);
 export type Alert = typeof alerts.$inferSelect;
 export type NewAlert = typeof alerts.$inferInsert;

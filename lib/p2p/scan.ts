@@ -1,10 +1,12 @@
-import { desc, eq, gte, and, isNotNull } from "drizzle-orm";
+import { desc, eq, gte, and, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { settings, snapshots, opportunities, alerts, pendingOperations } from "@/db/schema";
+import { costPreferencesFrom } from "@/lib/cost-prefs";
 import { sendPush, sendSms } from "@/lib/messaging-client";
 import { fetchAllAds } from "@/lib/p2p/binance-client";
 import { normalizeAll } from "@/lib/p2p/orderbook";
 import { evaluateOpportunity } from "@/lib/p2p/analysis";
+import { findBestAdPairs } from "@/lib/p2p/optimizer";
 import { fetchUsdMznReference } from "@/lib/p2p/reference-price";
 import { buildOpportunityMessage } from "@/lib/p2p/notify-format";
 import { getPriceExtremes, getReferenceDivergenceSignal } from "@/lib/p2p/price-intelligence";
@@ -68,7 +70,19 @@ export async function runMarketScan(): Promise<ScanResult> {
 
   const askAds = normalizeAll(askRaw);
   const bidAds = normalizeAll(bidRaw);
-  const capitalMzn = Number(config.currentCapitalMzn);
+
+  // Só o capital que está mesmo livre. O dinheiro já convertido em USDT à
+  // espera de comprador (pending_operations) não pode ser gasto outra vez —
+  // simular com ele produzia alertas para operações impossíveis de
+  // executar, e o utilizador só descobria isso ao abrir a Binance.
+  const [lockedRow] = await db
+    .select({ lockedMzn: sql<string>`coalesce(sum(${pendingOperations.capitalUsedMzn}), 0)` })
+    .from(pendingOperations)
+    .where(eq(pendingOperations.status, "aguardando_venda"));
+  const lockedMzn = Number(lockedRow?.lockedMzn ?? 0);
+  const capitalMzn = Math.max(0, Number(config.currentCapitalMzn) - lockedMzn);
+
+  const costPrefs = costPreferencesFrom(config);
 
   const evaluation = evaluateOpportunity(askAds, bidAds, capitalMzn, {
     minGrossSpreadPct: Number(config.minGrossSpreadPct),
@@ -76,7 +90,7 @@ export async function runMarketScan(): Promise<ScanResult> {
     minCounterpartyMonthlyOrders: config.minCounterpartyMonthlyOrders,
     maxOrdersPerLeg: config.maxOrdersPerLeg,
     minNetPctAlert: Number(config.minNetPctAlert),
-  });
+  }, costPrefs);
   const { summary, trip, net } = evaluation;
 
   // Ordenados por preço (melhor primeiro) antes de gravar — assim o
@@ -148,15 +162,27 @@ export async function runMarketScan(): Promise<ScanResult> {
   const hasCapital = trip.buy.inputUsed > 0;
   const netPositive = hasCapital && net.medio.netMzn > 0;
   const grossAboveThreshold = hasCapital && trip.grossProfitMzn > Number(config.minDisplayProfitMzn);
-  const isProfitable = netPositive || grossAboveThreshold;
+
+  // O caminho guloso (comprar do mais barato para cima) não é o único, nem
+  // costuma ser o melhor: um par único comprador/vendedor paga metade das
+  // taxas fixas e executa numa fracção do tempo. Procuramos o melhor par
+  // aqui para (a) poder alertar mesmo quando o caminho guloso não dá lucro
+  // nenhum, e (b) dizer no alerta qual é a melhor forma de executar.
+  const bestPair = findBestAdPairs(askAds, bidAds, capitalMzn, costPrefs, 1)[0] ?? null;
+  const pairBeatsGreedy = bestPair !== null && bestPair.netMzn > net.medio.netMzn + 0.01;
+
+  const isProfitable = netPositive || grossAboveThreshold || (bestPair !== null && bestPair.netMzn > 0);
 
   let alertSent = false;
   if (isProfitable) {
+    // Cooldown SÓ contra outros alertas de oportunidade. Antes bastava um
+    // aviso de "preço no mínimo recente" ter saído há 3 minutos para este
+    // — o alerta que realmente importa — ficar silenciado a janela toda.
     const cooldownSince = new Date(Date.now() - config.alertCooldownMinutes * 60_000);
     const [recentAlert] = await db
       .select({ id: alerts.id })
       .from(alerts)
-      .where(and(gte(alerts.sentAt, cooldownSince), isNotNull(alerts.opportunityId)))
+      .where(and(gte(alerts.sentAt, cooldownSince), eq(alerts.kind, "oportunidade")))
       .orderBy(desc(alerts.sentAt))
       .limit(1);
 
@@ -167,6 +193,16 @@ export async function runMarketScan(): Promise<ScanResult> {
         net,
         meetsEntryRules: evaluation.meetsEntryRules,
         reasonsBlocked: evaluation.reasonsBlocked,
+        betterPair: pairBeatsGreedy && bestPair
+          ? {
+              buyMerchant: bestPair.buyAd.merchantName,
+              buyPrice: bestPair.buyAd.price,
+              sellMerchant: bestPair.sellAd.merchantName,
+              sellPrice: bestPair.sellAd.price,
+              spendMzn: bestPair.spendMzn,
+              netMzn: bestPair.netMzn,
+            }
+          : null,
       });
 
       const pushResult = await sendPush(title, shortBody);
@@ -181,6 +217,7 @@ export async function runMarketScan(): Promise<ScanResult> {
       // completa, sem o limite de 500/1000 caracteres do push/SMS.
       await db.insert(alerts).values({
         opportunityId: opportunity.id,
+        kind: "oportunidade",
         title,
         body: fullBody,
         gatewayMessageId: pushResult.ok ? pushResult.id : null,
@@ -198,7 +235,11 @@ export async function runMarketScan(): Promise<ScanResult> {
   // exigir que ninguém leia gráfico nenhum. Independente do alerta de
   // oportunidade acima: um é "há lucro na viagem completa agora", este é
   // "este lado do mercado está num ponto historicamente bom".
-  async function sendGuardedAlert(title: string, body: string) {
+  async function sendGuardedAlert(
+    title: string,
+    body: string,
+    kind: "sinal_preco" | "operacao_pendente" = "sinal_preco"
+  ) {
     const cooldownSince = new Date(Date.now() - config.alertCooldownMinutes * 60_000);
     const [recent] = await db
       .select({ id: alerts.id })
@@ -215,7 +256,8 @@ export async function runMarketScan(): Promise<ScanResult> {
       smsError = smsResult.ok ? null : smsResult.error;
     }
     await db.insert(alerts).values({
-      opportunityId: opportunity.id,
+      opportunityId: kind === "sinal_preco" ? opportunity.id : null,
+      kind,
       title,
       body,
       gatewayMessageId: pushResult.ok ? pushResult.id : null,
@@ -371,7 +413,8 @@ export async function runMarketScan(): Promise<ScanResult> {
         `Tens ${Number(op.usdtAmount).toFixed(4)} USDT à espera desde ${op.startedAt.toLocaleString("pt-PT")}.\n\n` +
           `Encontrámos ${summary.bestBid.toFixed(2)} MZN/USDT — igual ou melhor do que o teu alvo de ` +
           `${target.toFixed(2)} MZN/USDT.\n\n` +
-          `Abre /operacoes para finalizar a venda.`
+          `Abre /operacoes para finalizar a venda.`,
+        "operacao_pendente"
       );
     }
   }

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { TrendingUp } from "lucide-react";
-import { getSettings, getUnreadAlertsCount, getRecentAlerts } from "@/lib/queries";
+import { getCapitalPosition, getUnreadAlertsCount, getRecentAlerts } from "@/lib/queries";
 import { formatMzn } from "@/lib/utils";
 import { SidebarNav, BottomTabBar } from "@/components/layout/nav";
 import { SignOutButton } from "@/components/layout/sign-out-button";
@@ -17,8 +17,8 @@ import { AppFooter } from "@/components/layout/app-footer";
 export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const [config, unreadCount, recentAlerts] = await Promise.all([
-    getSettings(),
+  const [capital, unreadCount, recentAlerts] = await Promise.all([
+    getCapitalPosition(),
     getUnreadAlertsCount(),
     getRecentAlerts(15),
   ]);
@@ -43,12 +43,21 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
         <div className="flex flex-col gap-3">
           <div className="rounded-md border border-[var(--sidebar-border)] bg-[var(--sidebar-active)] px-3 py-2.5">
+            {/* Capital LIVRE, não o total: enquanto houver compras por
+                fechar, o total é um número que não se pode gastar — e o
+                sistema mostrava-o como se estivesse todo disponível. */}
             <p className="text-[11px] uppercase tracking-wide text-[var(--sidebar-muted)]">
-              Capital configurado
+              Livre para operar
             </p>
             <p className="tabular text-sm font-semibold text-[var(--sidebar-fg)]">
-              {formatMzn(config?.currentCapitalMzn)}
+              {formatMzn(capital.availableMzn)}
             </p>
+            {capital.lockedMzn > 0 ? (
+              <p className="mt-1 text-[11px] text-[var(--sidebar-muted)]">
+                {formatMzn(capital.lockedMzn)} presos em {capital.lockedOperations}{" "}
+                {capital.lockedOperations === 1 ? "operação" : "operações"}
+              </p>
+            ) : null}
           </div>
           <SignOutButton />
         </div>
@@ -63,7 +72,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </Link>
           <div className="flex items-center gap-3">
             <div className="tabular text-xs font-semibold text-[var(--muted)]">
-              {formatMzn(config?.currentCapitalMzn)}
+              {formatMzn(capital.availableMzn)}
             </div>
             <NotificationBell
               unreadCount={unreadCount}

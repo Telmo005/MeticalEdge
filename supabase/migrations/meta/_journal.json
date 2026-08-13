@@ -43,6 +43,13 @@
       "when": 1786576513746,
       "tag": "0005_yielding_mojo",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786602434126,
+      "tag": "0006_cost_model_and_alert_kinds",
+      "breakpoints": true
     }
   ]
 }
