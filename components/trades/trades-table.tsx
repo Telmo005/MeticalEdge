@@ -20,6 +20,12 @@ const OUTCOME_TONE: Record<string, "good" | "warning" | "critical"> = {
   loss: "critical",
 };
 
+const OUTCOME_LABEL: Record<string, string> = {
+  success: "Sucesso",
+  partial: "Parcial",
+  loss: "Prejuízo",
+};
+
 export function TradesTable({ trades }: { trades: Trade[] }) {
   const [query, setQuery] = useState("");
 
@@ -87,7 +93,7 @@ export function TradesTable({ trades }: { trades: Trade[] }) {
                   <td className="tabular px-3 py-2 text-right">{formatMzn(t.sellPrice)}</td>
                   <td className="tabular px-3 py-2 text-right">{formatMzn(t.netProfitMzn)}</td>
                   <td className="px-3 py-2">
-                    <Badge tone={OUTCOME_TONE[t.outcome] ?? "warning"}>{t.outcome}</Badge>
+                    <Badge tone={OUTCOME_TONE[t.outcome] ?? "warning"}>{OUTCOME_LABEL[t.outcome] ?? t.outcome}</Badge>
                   </td>
                 </tr>
               ))

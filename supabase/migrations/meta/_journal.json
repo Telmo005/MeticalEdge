@@ -36,6 +36,13 @@
       "when": 1786551322940,
       "tag": "0004_min_display_profit",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786576513746,
+      "tag": "0005_yielding_mojo",
+      "breakpoints": true
     }
   ]
 }

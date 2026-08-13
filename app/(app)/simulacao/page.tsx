@@ -1,30 +1,38 @@
 import { getLatestSnapshot, getSettings } from "@/lib/queries";
-import { roundTripForCapital, netByScenario, evaluateSellCounterparties } from "@/lib/p2p/analysis";
+import { roundTripForCapital, roundTripLimited, netByScenario, evaluateSellCounterparties } from "@/lib/p2p/analysis";
 import { Card, CardLabel, CardTitle } from "@/components/ui/card";
 import { RefreshButton } from "@/components/refresh-button";
 import { ExecutionPlan } from "@/components/execution-plan";
-import { SimulateForm } from "@/components/simulate-form";
+import { ScenarioRange } from "@/components/scenario-range";
+import { SimulateForm, type TradeMode } from "@/components/simulate-form";
 import { CounterpartyOptions, type CounterpartyRow } from "@/components/counterparty-options";
 import { TrancheKpisChart, type TrancheRow } from "@/components/tranche-kpis-chart";
 import { PriceProfitChart, type PricePoint } from "@/components/price-profit-chart";
 import { Tabs } from "@/components/ui/tabs";
 import { formatMzn, formatUsdt } from "@/lib/utils";
-import type { Ad } from "@/lib/p2p/orderbook";
+import { maxMznExecutable, type Ad } from "@/lib/p2p/orderbook";
 
 const STANDARD_TRANCHES = [500, 1000, 2000, 5000, 10000];
+const VALID_MODES: TradeMode[] = ["capital", "equilibrado-1", "equilibrado-2", "um-para-varios"];
 
 export default async function SimulacaoPage({
   searchParams,
 }: {
-  searchParams: Promise<{ capital?: string }>;
+  searchParams: Promise<{ capital?: string; modo?: string }>;
 }) {
   const [snapshot, config] = await Promise.all([getLatestSnapshot(), getSettings()]);
-  const { capital: capitalParam } = await searchParams;
+  const { capital: capitalParam, modo: modoParam } = await searchParams;
 
   const askAds: Ad[] = snapshot?.askAds ?? [];
   const bidAds: Ad[] = snapshot?.bidAds ?? [];
 
   const chosenCapital = Number(capitalParam) || Number(config?.currentCapitalMzn) || 5000;
+  // Por omissão "equilibrado-1": comprar e vender a um só comerciante de
+  // cada vez, sem espalhar por várias contrapartes — ver components/
+  // simulate-form.tsx para as três opções e porque nenhuma delas obriga a
+  // usar o capital todo se isso só servir para confundir.
+  const mode: TradeMode = VALID_MODES.includes(modoParam as TradeMode) ? (modoParam as TradeMode) : "equilibrado-1";
+
   const tranches = Array.from(new Set([...STANDARD_TRANCHES, chosenCapital])).sort((a, b) => a - b);
 
   const rows = tranches.map((capital) => {
@@ -33,7 +41,22 @@ export default async function SimulacaoPage({
     return { capital, trip, net };
   });
 
-  const selected = rows.find((r) => r.capital === chosenCapital) ?? rows[0];
+  let selectedTrip: ReturnType<typeof roundTripForCapital>;
+  let unusedCapitalMzn = 0;
+  if (mode === "capital") {
+    selectedTrip = roundTripForCapital(askAds, bidAds, chosenCapital);
+  } else {
+    const limits: Record<Exclude<TradeMode, "capital">, { maxBuyAds: number | null; maxSellAds: number | null }> = {
+      "equilibrado-1": { maxBuyAds: 1, maxSellAds: 1 },
+      "equilibrado-2": { maxBuyAds: 2, maxSellAds: 2 },
+      "um-para-varios": { maxBuyAds: 1, maxSellAds: null },
+    };
+    const balanced = roundTripLimited(askAds, bidAds, chosenCapital, limits[mode]);
+    selectedTrip = balanced;
+    unusedCapitalMzn = balanced.unusedCapitalMzn;
+  }
+  const selected = { capital: chosenCapital, trip: selectedTrip, net: netByScenario(selectedTrip) };
+  const noSellCounterparty = selectedTrip.buy.outputAmount > 0 && selectedTrip.sell.steps.length === 0;
 
   const trancheRows: TrancheRow[] = rows.map(({ capital, trip, net }) => ({
     capital,
@@ -73,6 +96,8 @@ export default async function SimulacaoPage({
       usdtAmount: o.usdtSold,
       monthOrders: o.bidAd.monthOrders,
       monthFinishRate: o.bidAd.monthFinishRate,
+      minMzn: o.bidAd.minMzn,
+      maxMzn: maxMznExecutable(o.bidAd),
     },
   }));
 
@@ -96,25 +121,40 @@ export default async function SimulacaoPage({
       ) : (
         <>
           <Card>
-            <SimulateForm defaultCapital={chosenCapital} />
+            <SimulateForm defaultCapital={chosenCapital} mode={mode} />
           </Card>
 
           <Tabs
             tabs={[
               {
                 key: "detalhes",
-                label: `Detalhes (${formatMzn(selected?.capital ?? 0)})`,
-                content: selected ? (
+                label: `Detalhes (${formatMzn(selected.capital)})`,
+                content: (
                   <Card>
                     <div className="mb-4 flex items-center justify-between">
                       <CardTitle>Detalhe para {formatMzn(selected.capital)}</CardTitle>
                     </div>
 
-                    {!selected.trip.buy.fullyFilled ? (
+                    {mode !== "capital" && unusedCapitalMzn > 1 ? (
+                      <p className="mb-4 rounded-md bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--muted)]">
+                        Negociaste {formatMzn(selected.trip.buy.inputUsed)} de {formatMzn(selected.capital)}{" "}
+                        configurados — {formatMzn(unusedCapitalMzn)} ficam por usar nesta oportunidade (modo
+                        equilibrado: só usa o que fecha em poucos comerciantes, não força o resto).
+                      </p>
+                    ) : null}
+
+                    {mode === "capital" && !selected.trip.buy.fullyFilled ? (
                       <p className="mb-4 rounded-md bg-[var(--warning-bg)] px-3 py-2 text-sm text-[var(--warning)]">
                         Só {formatMzn(selected.trip.buy.inputUsed)} de {formatMzn(selected.capital)} coube nos
                         anúncios disponíveis agora — os valores abaixo (&ldquo;Gastas&rdquo;, &ldquo;Ficas
                         com&rdquo;) são sobre o que foi mesmo usado, não sobre o capital todo.
+                      </p>
+                    ) : null}
+
+                    {noSellCounterparty ? (
+                      <p className="mb-4 rounded-md bg-[var(--critical-bg)] px-3 py-2 text-sm text-[var(--critical)]">
+                        Compraste {formatUsdt(selected.trip.buy.outputAmount)} mas não há comprador disponível
+                        agora para levar esse USDT de volta ({mode === "capital" ? "nem no livro todo" : "dentro do limite de comerciantes deste modo"}). Espera que apareça um anúncio de compra melhor, ou considera anunciar tu mesmo a vender no Binance P2P.
                       </p>
                     ) : null}
 
@@ -137,19 +177,12 @@ export default async function SimulacaoPage({
                       </div>
                     </div>
 
-                    <div className="mb-4 grid grid-cols-1 gap-3 rounded-md bg-[var(--surface-2)] p-3 sm:grid-cols-3">
-                      <div>
-                        <CardLabel>Cenário conservador</CardLabel>
-                        <div className="tabular">{formatMzn(selected.net.conservador.netMzn)}</div>
-                      </div>
-                      <div>
-                        <CardLabel>Cenário médio</CardLabel>
-                        <div className="tabular">{formatMzn(selected.net.medio.netMzn)}</div>
-                      </div>
-                      <div>
-                        <CardLabel>Cenário optimista</CardLabel>
-                        <div className="tabular">{formatMzn(selected.net.otimista.netMzn)}</div>
-                      </div>
+                    <div className="mb-4 rounded-md bg-[var(--surface-2)] p-4">
+                      <ScenarioRange
+                        conservadorMzn={selected.net.conservador.netMzn}
+                        medioMzn={selected.net.medio.netMzn}
+                        otimistaMzn={selected.net.otimista.netMzn}
+                      />
                     </div>
 
                     <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
@@ -161,7 +194,7 @@ export default async function SimulacaoPage({
                       netMzn={selected.net.medio.netMzn}
                     />
                   </Card>
-                ) : null,
+                ),
               },
               {
                 key: "comerciantes",

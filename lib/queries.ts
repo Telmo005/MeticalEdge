@@ -1,7 +1,7 @@
 import "server-only";
 import { desc, eq, sql, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { settings, snapshots, opportunities, trades, alerts, capitalLedger, errorLogs } from "@/db/schema";
+import { settings, snapshots, opportunities, trades, alerts, capitalLedger, errorLogs, pendingOperations } from "@/db/schema";
 
 export async function getSettings() {
   const [row] = await db.select().from(settings).where(eq(settings.id, true)).limit(1);
@@ -46,6 +46,28 @@ export async function getRecentErrorLogs(limit = 30) {
 
 export async function getCapitalHistory(limit = 100) {
   return db.select().from(capitalLedger).orderBy(desc(capitalLedger.changedAt)).limit(limit);
+}
+
+export async function getPendingOperations() {
+  return db
+    .select()
+    .from(pendingOperations)
+    .where(eq(pendingOperations.status, "aguardando_venda"))
+    .orderBy(desc(pendingOperations.startedAt));
+}
+
+export async function getPendingOperationById(id: string) {
+  const [row] = await db.select().from(pendingOperations).where(eq(pendingOperations.id, id)).limit(1);
+  return row ?? null;
+}
+
+export async function getRecentFinishedOperations(limit = 20) {
+  return db
+    .select()
+    .from(pendingOperations)
+    .where(sql`${pendingOperations.status} != 'aguardando_venda'`)
+    .orderBy(desc(pendingOperations.finalizedAt))
+    .limit(limit);
 }
 
 export async function getTradeStats() {

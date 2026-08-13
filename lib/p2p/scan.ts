@@ -1,6 +1,6 @@
 import { desc, eq, gte, and, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
-import { settings, snapshots, opportunities, alerts } from "@/db/schema";
+import { settings, snapshots, opportunities, alerts, pendingOperations } from "@/db/schema";
 import { sendPush, sendSms } from "@/lib/messaging-client";
 import { fetchAllAds } from "@/lib/p2p/binance-client";
 import { normalizeAll } from "@/lib/p2p/orderbook";
@@ -347,6 +347,33 @@ export async function runMarketScan(): Promise<ScanResult> {
         `${divergence.currentBidDiscountPct >= 0 ? "abaixo" : "acima"} do preço de referência da Binance — isto é ` +
         `incomum comparado com os últimos ${REFERENCE_DIVERGENCE_WINDOW_DAYS} dias deste mercado, vale a pena olhar com atenção.`
     );
+  }
+
+  // --- Operações em espera: avisa quando aparece comprador ao preço-alvo -
+  // Cada compra sem venda ainda fica "presa" numa pending_operation — aqui
+  // é onde o sistema cumpre a promessa de ir procurar sozinho um comprador
+  // ao preço a que valia a pena (ou melhor), em vez de deixar isso só para
+  // quando o utilizador voltar a olhar manualmente.
+  if (summary.bestBid !== null) {
+    const pending = await db
+      .select()
+      .from(pendingOperations)
+      .where(eq(pendingOperations.status, "aguardando_venda"));
+
+    for (const op of pending) {
+      if (op.targetSellPrice === null) continue;
+      const target = Number(op.targetSellPrice);
+      if (summary.bestBid + PRICE_SIGNAL_EPSILON < target) continue;
+
+      const shortId = op.id.slice(0, 8);
+      await sendGuardedAlert(
+        `Comprador encontrado para a operação em espera (${shortId})`,
+        `Tens ${Number(op.usdtAmount).toFixed(4)} USDT à espera desde ${op.startedAt.toLocaleString("pt-PT")}.\n\n` +
+          `Encontrámos ${summary.bestBid.toFixed(2)} MZN/USDT — igual ou melhor do que o teu alvo de ` +
+          `${target.toFixed(2)} MZN/USDT.\n\n` +
+          `Abre /operacoes para finalizar a venda.`
+      );
+    }
   }
 
   return {

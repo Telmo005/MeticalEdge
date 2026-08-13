@@ -29,9 +29,12 @@ export default async function LivroPage() {
         <div>
           <h1 className="text-lg font-semibold">Livro de ofertas — USDT/MZN</h1>
           <p className="text-sm text-[var(--muted)]">
-            Todos os anúncios da última varredura, não só o melhor preço. Toca num cabeçalho de coluna para
-            ordenar. Reputação em vermelho significa poucas ordens/mês ou baixa taxa de conclusão — evita
-            negociar com essas contas mesmo que o preço pareça bom.
+            Todos os anúncios da última varredura, não só o melhor preço — sempre do teu ponto de vista
+            (&ldquo;pagas&rdquo;/&ldquo;recebes&rdquo;), não do comerciante. Repara no &ldquo;Mín.&rdquo;: um
+            preço óptimo com mínimo muito maior do que o teu capital não serve — não é uma opção real para ti,
+            é por isso que a Simulação às vezes não o usa mesmo parecendo o melhor preço aqui. Toca num
+            cabeçalho de coluna para ordenar. Reputação em vermelho significa poucas ordens/mês ou baixa taxa
+            de conclusão — evita negociar com essas contas mesmo que o preço pareça bom.
           </p>
         </div>
         <RefreshButton />
@@ -45,14 +48,14 @@ export default async function LivroPage() {
         <Tabs
           tabs={[
             {
-              key: "compra",
-              label: `Quem compra USDT (${bidRows.length})`,
-              content: <SortableAdsTable ads={bidRows} priceLabel="Preço de compra" defaultSortDir="desc" />,
+              key: "tu-vendes",
+              label: `Onde tu vendes USDT (${bidRows.length})`,
+              content: <SortableAdsTable ads={bidRows} priceLabel="Quanto recebes" defaultSortDir="desc" />,
             },
             {
-              key: "vende",
-              label: `Quem vende USDT (${askRows.length})`,
-              content: <SortableAdsTable ads={askRows} priceLabel="Preço de venda" defaultSortDir="asc" />,
+              key: "tu-compras",
+              label: `Onde tu compras USDT (${askRows.length})`,
+              content: <SortableAdsTable ads={askRows} priceLabel="Quanto pagas" defaultSortDir="asc" />,
             },
           ]}
         />
