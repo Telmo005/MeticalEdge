@@ -24,7 +24,14 @@ import {
   type CostPreferences,
   type CostScenarioLabel,
 } from "./fees";
-import { Ad, ExecutionResult, simulateBuyUsdt, simulateBuyUsdtTarget, simulateSellUsdt } from "./orderbook";
+import {
+  Ad,
+  ExecutionResult,
+  maxMznExecutable,
+  simulateBuyUsdt,
+  simulateBuyUsdtTarget,
+  simulateSellUsdt,
+} from "./orderbook";
 
 export type MarketSummary = {
   bestAsk: number | null;
@@ -77,13 +84,33 @@ export type RoundTrip = {
 
 /**
  * A que preço o USDT que sobrou pode realmente ser convertido em Meticais.
- * Só conta anúncios de compra que a perna de venda ainda NÃO consumiu — os
- * que já foram usados estão (na prática desta simulação) esgotados.
+ *
+ * Duas condições, ambas necessárias — e ambas em falta antes:
+ *
+ * 1. O anúncio não pode já ter sido consumido pela perna de venda.
+ * 2. O anúncio tem de conseguir mesmo levar este resíduo: respeitar o
+ *    mínimo dele e ter capacidade para a quantidade toda. Sem isto, o
+ *    melhor preço do livro era usado como referência mesmo quando exigia um
+ *    mínimo dez vezes maior do que o resíduo — o que inventava lucro numa
+ *    venda que nunca poderia acontecer.
  */
-function markResidualPrice(allBidAds: Ad[], usedAdvNos: Set<string>): number | null {
+function markResidualPrice(
+  allBidAds: Ad[],
+  usedAdvNos: Set<string>,
+  residualUsdt: number
+): number | null {
+  if (residualUsdt <= 1e-9) return null;
+
   const available = allBidAds
-    .filter((b) => b.side === "BUY" && b.price > 0 && !usedAdvNos.has(b.advNo))
+    .filter((b) => {
+      if (b.side !== "BUY" || b.price <= 0 || usedAdvNos.has(b.advNo)) return false;
+      const capMzn = maxMznExecutable(b);
+      if (capMzn <= 0) return false;
+      const residualMzn = residualUsdt * b.price;
+      return residualMzn >= b.minMzn && capMzn >= residualMzn;
+    })
     .sort((a, b) => b.price - a.price);
+
   return available[0]?.price ?? null;
 }
 
@@ -96,7 +123,7 @@ function combineRoundTrip(
   const residualUsdt = Math.max(0, buy.outputAmount - sell.inputUsed);
 
   const usedAdvNos = new Set(sell.steps.map((s) => s.advNo));
-  const markPrice = residualUsdt > 1e-9 ? markResidualPrice(allBidAds, usedAdvNos) : null;
+  const markPrice = markResidualPrice(allBidAds, usedAdvNos, residualUsdt);
   const residualMarkedMzn = residualUsdt * (markPrice ?? 0);
 
   const gross = sell.outputAmount + residualMarkedMzn - buy.inputUsed;
@@ -138,12 +165,51 @@ export type BalancedRoundTrip = RoundTrip & {
 const SELL_CAPACITY_PROBE_USDT = 1e12;
 
 /**
- * Alternativa ao "usa o capital todo": limita a viagem a, no máximo,
- * `maxBuyAds`/`maxSellAds` comerciantes de cada lado (`null` = sem limite
- * nesse lado) e negoceia o MAIOR valor que cabe ao mesmo tempo na compra E
- * na venda — nunca compra mais USDT do que consegue vender de volta a essas
- * contrapartes. O que sobrar do capital configurado fica de fora (ver
- * `unusedCapitalMzn`), nunca é forçado através de mais ordens.
+ * Executa uma viagem completa usando EXACTAMENTE os anúncios dados de cada
+ * lado, negociando o maior valor que cabe ao mesmo tempo na compra e na
+ * venda — nunca compra mais USDT do que consegue vender de volta a essas
+ * contrapartes.
+ *
+ * `allBidAds` é o livro de compra inteiro e serve só para marcar o resíduo:
+ * o USDT que sobra continua a ser vendável a outra pessoa noutra altura, e
+ * fingir o contrário penalizaria os modos "poucos comerciantes" sem razão
+ * real.
+ */
+export function roundTripFromPools(
+  buyPool: Ad[],
+  sellPool: Ad[],
+  capitalMzn: number,
+  allBidAds: Ad[],
+  { sellPoolIsWholeBook = false }: { sellPoolIsWholeBook?: boolean } = {}
+): RoundTrip {
+  const buyFull = simulateBuyUsdt(buyPool, capitalMzn);
+
+  let buy: ExecutionResult;
+  if (sellPoolIsWholeBook) {
+    buy = buyFull;
+  } else {
+    const sellCapacityUsdt = simulateSellUsdt(sellPool, SELL_CAPACITY_PROBE_USDT).inputUsed;
+    buy =
+      buyFull.outputAmount <= sellCapacityUsdt + 1e-9
+        ? buyFull
+        : simulateBuyUsdtTarget(buyPool, sellCapacityUsdt, capitalMzn);
+  }
+
+  const sell = simulateSellUsdt(sellPool, buy.outputAmount);
+  return combineRoundTrip(buy, sell, allBidAds, capitalMzn);
+}
+
+/**
+ * Versão ingénua: limita a viagem aos N anúncios de MELHOR PREÇO de cada
+ * lado.
+ *
+ * Mantida só porque é o comportamento que o modo "equilibrado" tinha, e
+ * serve de termo de comparação. Não deve ser usada para decidir nada: se o
+ * anúncio mais barato do livro exigir um mínimo acima do capital, esta
+ * função devolve uma viagem vazia — como se não houvesse oportunidade
+ * nenhuma — quando na verdade bastava usar o segundo anúncio mais barato.
+ * Ver `findBestLimitedRoundTrip` em lib/p2p/optimizer.ts, que procura a
+ * melhor combinação em vez de assumir que é a do topo da lista.
  */
 export function roundTripLimited(
   askAds: Ad[],
@@ -157,28 +223,11 @@ export function roundTripLimited(
   const asksLimited = maxBuyAds !== null ? asksPool.slice(0, maxBuyAds) : asksPool;
   const bidsLimited = maxSellAds !== null ? bidsPool.slice(0, maxSellAds) : bidsPool;
 
-  const buyFull = simulateBuyUsdt(asksLimited, capitalMzn);
+  const trip = roundTripFromPools(asksLimited, bidsLimited, capitalMzn, bidsPool, {
+    sellPoolIsWholeBook: maxSellAds === null,
+  });
 
-  let buy: ExecutionResult;
-  if (maxSellAds === null) {
-    buy = buyFull;
-  } else {
-    const sellCapacityProbe = simulateSellUsdt(bidsLimited, SELL_CAPACITY_PROBE_USDT);
-    const sellCapacityUsdt = sellCapacityProbe.inputUsed;
-    buy =
-      buyFull.outputAmount <= sellCapacityUsdt + 1e-9
-        ? buyFull
-        : simulateBuyUsdtTarget(asksLimited, sellCapacityUsdt, capitalMzn);
-  }
-
-  const sell = simulateSellUsdt(bidsLimited, buy.outputAmount);
-  // O resíduo é marcado contra o livro TODO, não só contra os anúncios que
-  // este modo permitiu usar: o USDT que sobra continua a ser vendável a
-  // outra pessoa noutra altura, e fingir o contrário penalizaria os modos
-  // "poucos comerciantes" sem razão real.
-  const trip = combineRoundTrip(buy, sell, bidsPool, capitalMzn);
-
-  return { ...trip, maxBuyAds, maxSellAds, unusedCapitalMzn: Math.max(0, capitalMzn - buy.inputUsed) };
+  return { ...trip, maxBuyAds, maxSellAds, unusedCapitalMzn: Math.max(0, capitalMzn - trip.buy.inputUsed) };
 }
 
 export type NetScenario = {
@@ -414,8 +463,7 @@ export function evaluateSellCounterparties(
     // Resíduo marcado ao melhor comprador ALTERNATIVO (não a este, que já
     // foi usado, nem ao preço de compra como antes) — é o único valor que
     // representa dinheiro que poderias mesmo receber.
-    const residualMarkPrice =
-      residualUsdt > 1e-9 ? markResidualPrice(bidAds, new Set([bidAd.advNo])) : null;
+    const residualMarkPrice = markResidualPrice(bidAds, new Set([bidAd.advNo]), residualUsdt);
     const residualMarkedMzn = residualUsdt * (residualMarkPrice ?? 0);
 
     const grossProfitMzn = mznReceived + residualMarkedMzn - buy.inputUsed;

@@ -25,7 +25,14 @@ import {
   type CostPreferences,
 } from "./fees";
 import { maxMznExecutable, type Ad } from "./orderbook";
-import { netByScenario, roundTripForCapital, type NetByScenario, type RoundTrip } from "./analysis";
+import {
+  netByScenario,
+  roundTripForCapital,
+  roundTripFromPools,
+  type BalancedRoundTrip,
+  type NetByScenario,
+  type RoundTrip,
+} from "./analysis";
 
 // ---------------------------------------------------------------------------
 // 1. Tamanho óptimo de operação
@@ -275,7 +282,121 @@ function minOrNull(a: number | null, b: number | null): number | null {
 }
 
 // ---------------------------------------------------------------------------
-// 3. Comparação de estratégias
+// 3. Melhor combinação com um número limitado de comerciantes
+// ---------------------------------------------------------------------------
+
+/** Quantos anúncios de cada lado entram na procura. Ordenados por preço, os
+ *  que ficam de fora nunca ganhariam a nenhum destes. */
+const SUBSET_POOL_CAP = 14;
+
+/** Todos os conjuntos não vazios até `maxSize` elementos. */
+function subsetsUpTo<T>(items: T[], maxSize: number): T[][] {
+  const out: T[][] = [];
+  const build = (start: number, current: T[]) => {
+    if (current.length > 0) out.push([...current]);
+    if (current.length === maxSize) return;
+    for (let i = start; i < items.length; i++) {
+      current.push(items[i]);
+      build(i + 1, current);
+      current.pop();
+    }
+  };
+  build(0, []);
+  return out;
+}
+
+/**
+ * A MELHOR viagem usando no máximo `maxBuyAds` comerciantes na compra e
+ * `maxSellAds` na venda (`null` = sem limite nesse lado).
+ *
+ * Isto substitui a versão que simplesmente cortava a lista nos N anúncios de
+ * melhor preço. Essa abordagem tinha uma falha grave e silenciosa: se o
+ * anúncio mais barato do livro exigir um mínimo de, digamos, 5.000 MZN, uma
+ * simulação de 1.000 MZN em "1 por lado" devolvia uma viagem completamente
+ * vazia — o ecrã não mostrava nada e parecia não haver oportunidade — quando
+ * bastava usar o segundo ou terceiro anúncio mais barato, que aceitam
+ * valores pequenos, para haver lucro.
+ *
+ * Aqui testam-se as combinações reais e escolhe-se a que rende mais depois
+ * de custos, que é o que a pergunta "onde é que ganho mais?" realmente
+ * significa.
+ */
+export function findBestLimitedRoundTrip(
+  askAds: Ad[],
+  bidAds: Ad[],
+  capitalMzn: number,
+  { maxBuyAds, maxSellAds }: { maxBuyAds: number | null; maxSellAds: number | null },
+  prefs: CostPreferences = DEFAULT_COST_PREFERENCES
+): BalancedRoundTrip {
+  const asksPool = askAds.filter((a) => a.side === "SELL" && a.price > 0).sort((a, b) => a.price - b.price);
+  const bidsPool = bidAds.filter((b) => b.side === "BUY" && b.price > 0).sort((a, b) => b.price - a.price);
+
+  const empty = (): BalancedRoundTrip => ({
+    ...roundTripFromPools([], [], capitalMzn, bidsPool),
+    maxBuyAds,
+    maxSellAds,
+    unusedCapitalMzn: capitalMzn,
+  });
+
+  if (asksPool.length === 0 || bidsPool.length === 0 || capitalMzn <= 0) return empty();
+
+  // Só entram na procura anúncios que este capital consegue mesmo tomar —
+  // era exactamente isto que faltava antes.
+  const usableAsks = asksPool
+    .filter((a) => maxMznExecutable(a) > 0 && a.minMzn <= capitalMzn)
+    .slice(0, SUBSET_POOL_CAP);
+  const usableBids = bidsPool.filter((b) => maxMznExecutable(b) > 0).slice(0, SUBSET_POOL_CAP);
+
+  if (usableAsks.length === 0) return empty();
+
+  const buyCandidates: Ad[][] =
+    maxBuyAds === null ? [asksPool] : subsetsUpTo(usableAsks, Math.max(1, maxBuyAds));
+  const sellCandidates: Ad[][] =
+    maxSellAds === null ? [bidsPool] : subsetsUpTo(usableBids, Math.max(1, maxSellAds));
+
+  if (sellCandidates.length === 0) return empty();
+
+  let best: BalancedRoundTrip | null = null;
+  let bestNetMzn = -Infinity;
+
+  for (const buyPool of buyCandidates) {
+    for (const sellPool of sellCandidates) {
+      const trip = roundTripFromPools(buyPool, sellPool, capitalMzn, bidsPool, {
+        sellPoolIsWholeBook: maxSellAds === null,
+      });
+      if (trip.buy.inputUsed <= 0) continue;
+
+      // Uma viagem em que a venda não executa não é uma viagem: é uma
+      // compra a descoberto avaliada ao preço de outra pessoa. Sem esta
+      // condição, a procura preferia essas combinações — parecem render
+      // mais só porque poupam a taxa da ordem de venda que nunca chega a
+      // acontecer.
+      if (trip.sell.steps.length === 0) continue;
+
+      const net = netByScenario(trip, prefs).medio.netMzn;
+      // Empate desfaz-se a favor de quem negoceia mais capital: com o mesmo
+      // lucro, é preferível a viagem que aproveita mais o dinheiro parado.
+      const better =
+        net > bestNetMzn + 1e-9 ||
+        (Math.abs(net - bestNetMzn) <= 1e-9 && best !== null && trip.buy.inputUsed > best.buy.inputUsed);
+
+      if (better) {
+        bestNetMzn = net;
+        best = {
+          ...trip,
+          maxBuyAds,
+          maxSellAds,
+          unusedCapitalMzn: Math.max(0, capitalMzn - trip.buy.inputUsed),
+        };
+      }
+    }
+  }
+
+  return best ?? empty();
+}
+
+// ---------------------------------------------------------------------------
+// 4. Comparação de estratégias
 // ---------------------------------------------------------------------------
 
 export type StrategyComparison = {

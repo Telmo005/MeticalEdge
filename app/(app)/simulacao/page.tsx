@@ -1,7 +1,7 @@
 import { getLatestSnapshot, getSettings, getCapitalPosition } from "@/lib/queries";
 import { costPreferencesFrom } from "@/lib/cost-prefs";
-import { roundTripForCapital, roundTripLimited, netByScenario, evaluateSellCounterparties } from "@/lib/p2p/analysis";
-import { findBestAdPairs, findOptimalSize } from "@/lib/p2p/optimizer";
+import { roundTripForCapital, netByScenario, evaluateSellCounterparties } from "@/lib/p2p/analysis";
+import { findBestAdPairs, findBestLimitedRoundTrip, findOptimalSize } from "@/lib/p2p/optimizer";
 import { evaluateMakerStrategies } from "@/lib/p2p/maker";
 import { analyzePayMethodArbitrage } from "@/lib/p2p/patterns";
 import { Card, CardLabel, CardTitle } from "@/components/ui/card";
@@ -69,7 +69,12 @@ export default async function SimulacaoPage({
       "equilibrado-2": { maxBuyAds: 2, maxSellAds: 2 },
       "um-para-varios": { maxBuyAds: 1, maxSellAds: null },
     };
-    const balanced = roundTripLimited(askAds, bidAds, chosenCapital, limits[mode]);
+    // Procura a MELHOR combinação dentro do limite de comerciantes, em vez
+    // de assumir que são os anúncios de melhor preço. Se o anúncio mais
+    // barato exigir um mínimo acima do capital simulado, a versão antiga
+    // devolvia uma viagem vazia — o ecrã ficava sem nada, como se não
+    // houvesse oportunidade, quando bastava usar o anúncio seguinte.
+    const balanced = findBestLimitedRoundTrip(askAds, bidAds, chosenCapital, limits[mode], costPrefs);
     selectedTrip = balanced;
     unusedCapitalMzn = balanced.unusedCapitalMzn;
   }

@@ -14,19 +14,19 @@ const MODE_OPTIONS: { value: TradeMode; label: string; hint: string; icon: React
   {
     value: "equilibrado-1",
     label: "Equilibrado — 1 por lado",
-    hint: "Compra a um só comerciante e vende a um só — sem sobrar USDT por vender a mais ninguém.",
+    hint: "Procura o melhor par: um comerciante para comprar, outro para vender. Menos taxas e execução rápida.",
     icon: Scale,
   },
   {
     value: "equilibrado-2",
     label: "Equilibrado — até 2 por lado",
-    hint: "Como acima, mas permite até 2 comerciantes de cada lado se isso deixar negociar mais.",
+    hint: "Como acima, mas pode usar dois de cada lado se a combinação render mais.",
     icon: Scale,
   },
   {
     value: "um-para-varios",
     label: "Comprar de 1, vender a vários",
-    hint: "Compra tudo a um só comerciante, depois espalha a venda por quantos comerciantes forem precisos.",
+    hint: "Escolhe o melhor comerciante para comprar tudo, depois espalha a venda por quantos forem precisos.",
     icon: Users,
   },
   {
