@@ -87,6 +87,27 @@ export async function updateCostSettingsFormAction(formData: FormData) {
   revalidatePath("/", "layout");
 }
 
+/**
+ * Quando é que o sistema deve avisar. Em Meticais de lucro LÍQUIDO, porque
+ * é essa a pergunta real ("vale a pena largar o que estou a fazer por
+ * isto?") — e porque o gatilho anterior olhava para o lucro bruto, o que
+ * fazia chegar avisos de oportunidades que davam prejuízo depois das taxas.
+ */
+export async function setMinNetProfitAlertFormAction(formData: FormData) {
+  await requireUser();
+  const value = Number(formData.get("minNetProfitAlertMzn"));
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error("O lucro mínimo para avisar tem de ser zero ou mais.");
+  }
+
+  await db
+    .update(settings)
+    .set({ minNetProfitAlertMzn: value.toFixed(2), updatedAt: new Date() })
+    .where(eq(settings.id, true));
+
+  revalidatePath("/", "layout");
+}
+
 export type RuleSettingsInput = {
   minNetPctAlert: number;
   minGrossSpreadPct: number;

@@ -58,6 +58,8 @@ export function buildOpportunityMessage({
   meetsEntryRules,
   reasonsBlocked,
   betterPair = null,
+  bestNetMzn,
+  thresholdMzn = 0,
 }: {
   capitalMzn: number;
   trip: RoundTrip;
@@ -67,8 +69,19 @@ export function buildOpportunityMessage({
   /** Alternativa de uma ordem por perna que rende mais do que o caminho
    *  guloso descrito acima — quando existe, é ela que deve ser executada. */
   betterPair?: BetterPairSummary | null;
+  /** Lucro líquido da MELHOR forma de executar, seja ela qual for. É este o
+   *  número que decidiu enviar o aviso, por isso é este que vai no título —
+   *  antes o título dizia só "oportunidade" e obrigava a abrir para saber
+   *  se valia dois Meticais ou duzentos. */
+  bestNetMzn?: number;
+  /** Limiar configurado em /settings, para o corpo poder explicar porque é
+   *  que este aviso passou. */
+  thresholdMzn?: number;
 }): { title: string; fullBody: string; shortBody: string } {
-  const title = meetsEntryRules ? "Oportunidade segura de lucro" : "Oportunidade de lucro (com avisos)";
+  const headline = bestNetMzn ?? net.medio.netMzn;
+  const title = meetsEntryRules
+    ? `Lucro de ${headline.toFixed(0)} MZN — dentro das regras`
+    : `Lucro de ${headline.toFixed(0)} MZN — com avisos`;
 
   const spentMzn = trip.buy.inputUsed;
   const receivedGrossMzn = trip.sell.outputAmount;
@@ -112,6 +125,10 @@ export function buildOpportunityMessage({
       ? `- Levantamento: ${net.medio.costs.railWithdrawFeeMzn.toFixed(2)} MZN`
       : null,
     `- Total: ${net.medio.costs.totalMzn.toFixed(2)} MZN`,
+    "",
+    thresholdMzn > 0
+      ? `Avisado porque o lucro líquido passa o teu limiar de ${thresholdMzn.toFixed(2)} MZN.`
+      : "Avisado porque sobra dinheiro depois de todos os custos.",
   ].filter((line): line is string => line !== null);
 
   if (betterPair) {

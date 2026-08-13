@@ -50,6 +50,13 @@
       "when": 1786602434126,
       "tag": "0006_cost_model_and_alert_kinds",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1786608057341,
+      "tag": "0007_net_profit_alert_threshold",
+      "breakpoints": true
     }
   ]
 }

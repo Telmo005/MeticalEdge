@@ -31,6 +31,16 @@ export const settings = meticalEdge.table("settings", {
    *  que passam este valor, o resto fica escondido atrás de "ver tudo". */
   minDisplayProfitMzn: numeric("min_display_profit_mzn", { precision: 14, scale: 2 }).notNull().default("0"),
   minNetPctAlert: numeric("min_net_pct_alert", { precision: 6, scale: 3 }).notNull().default("0.15"),
+  /** Lucro LÍQUIDO mínimo, em MZN, para o sistema avisar. Zero = avisa
+   *  sempre que sobrar dinheiro depois de todos os custos.
+   *
+   *  Antes o segundo gatilho de alerta olhava para o lucro BRUTO: chegavam
+   *  avisos de oportunidades que, depois das taxas, davam prejuízo. Um
+   *  limiar em Meticais sobre o líquido é o que corresponde à pergunta real
+   *  ("vale a pena largar o que estou a fazer por isto?"). */
+  minNetProfitAlertMzn: numeric("min_net_profit_alert_mzn", { precision: 14, scale: 2 })
+    .notNull()
+    .default("0"),
   minGrossSpreadPct: numeric("min_gross_spread_pct", { precision: 6, scale: 3 }).notNull().default("0.6"),
   minCounterpartyFinishRate: numeric("min_counterparty_finish_rate", { precision: 5, scale: 4 }).notNull().default("0.95"),
   minCounterpartyMonthlyOrders: integer("min_counterparty_monthly_orders").notNull().default(50),

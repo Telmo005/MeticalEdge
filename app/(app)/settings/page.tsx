@@ -2,6 +2,7 @@ import { getSettings, getCapitalHistory, getRecentErrorLogs } from "@/lib/querie
 import {
   setCapitalFormAction,
   setMinDisplayProfitFormAction,
+  setMinNetProfitAlertFormAction,
   updateRuleSettingsFormAction,
   resetRuleSettingsFormAction,
   updateAlertChannelsFormAction,
@@ -81,6 +82,36 @@ export default async function SettingsPage() {
           </div>
           <SubmitButton pendingText="A guardar...">Guardar</SubmitButton>
         </form>
+      </Card>
+
+      <Card>
+        <CardTitle>Quando avisar-te</CardTitle>
+        <p className="mb-4 mt-1 text-sm text-[var(--muted)]">
+          Recebes um alerta sempre que a melhor forma de executar render, no mínimo, este valor de lucro
+          <b> líquido</b> — já depois das taxas da Binance e do custo de transferir dinheiro. Zero significa
+          avisar sempre que sobrar dinheiro real. Sobe o valor se estiveres a receber alertas de mais para
+          operações pequenas demais para valerem a interrupção.
+        </p>
+        <form action={setMinNetProfitAlertFormAction} className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="minNetProfitAlertMzn">Lucro líquido mínimo para avisar</Label>
+            <InputWithSuffix
+              id="minNetProfitAlertMzn"
+              name="minNetProfitAlertMzn"
+              type="number"
+              step="1"
+              min="0"
+              suffix="MZN"
+              defaultValue={config?.minNetProfitAlertMzn ?? undefined}
+              className="w-full sm:w-56"
+            />
+          </div>
+          <SubmitButton pendingText="A guardar...">Guardar</SubmitButton>
+        </form>
+        <p className="mt-3 text-xs text-[var(--muted)]">
+          Isto é diferente de &ldquo;Lucro mínimo a considerar&rdquo; acima: esse filtra o que aparece nas
+          listas dentro da app, este decide se o telemóvel toca.
+        </p>
       </Card>
 
       <Card>
