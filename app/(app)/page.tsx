@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { CheckCircle2, XCircle, Info } from "lucide-react";
-import { getSettings, getLatestSnapshot, getRecentOpportunities, getTradeStats } from "@/lib/queries";
+import { getSettings, getLatestSnapshot, getRecentOpportunities, getTradeStats, getPendingOperations } from "@/lib/queries";
 import { Card, CardLabel, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,10 +29,11 @@ export default async function DashboardPage() {
     return <OnboardingWelcome />;
   }
 
-  const [snapshot, opportunitiesList, stats] = await Promise.all([
+  const [snapshot, opportunitiesList, stats, pendingOps] = await Promise.all([
     getLatestSnapshot(),
     getRecentOpportunities(200),
     getTradeStats(),
+    getPendingOperations(),
   ]);
 
   const [priceExtremes, askLifecycle, bidLifecycle, divergence, priceHistory] = await Promise.all([
@@ -71,6 +72,23 @@ export default async function DashboardPage() {
           tu executas na app da Binance.
         </p>
       </Card>
+
+      {pendingOps.length > 0 ? (
+        <Link href="/operacoes">
+          <Card className="flex items-center justify-between gap-3 border-l-4 border-l-[var(--warning)] transition-colors hover:bg-[var(--surface-2)]">
+            <div>
+              <p className="text-sm font-semibold text-[var(--foreground)]">
+                {pendingOps.length} {pendingOps.length === 1 ? "operação" : "operações"} à espera de vender
+              </p>
+              <p className="text-xs text-[var(--muted)]">
+                {formatMzn(pendingOps.reduce((s, o) => s + Number(o.capitalUsedMzn), 0))} em capital preso — toca
+                para ver
+              </p>
+            </div>
+            <Badge tone="warning">ver operações</Badge>
+          </Card>
+        </Link>
+      ) : null}
 
       <section>
         <div className="mb-3 flex items-center justify-between">
@@ -161,8 +179,8 @@ export default async function DashboardPage() {
                 )}
                 <CardTitle className="text-base">
                   {latestOpportunity.meetsEntryRules
-                    ? "Podes executar agora"
-                    : "Não executar agora"}
+                    ? "Dentro das regras de segurança"
+                    : "Com avisos — decide tu se avanças"}
                 </CardTitle>
               </div>
               <span className="text-xs text-[var(--muted)]">
@@ -193,7 +211,7 @@ export default async function DashboardPage() {
             {latestOpportunity.reasonsBlocked.length > 0 ? (
               <div className="mb-4 rounded-md bg-[var(--warning-bg)] p-3">
                 <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--warning)]">
-                  Por que não dá para executar agora
+                  Avisos — o plano abaixo é sempre mostrado, decide tu com esta informação
                 </p>
                 <ul className="list-inside list-disc text-sm text-[var(--foreground)]">
                   {latestOpportunity.reasonsBlocked.map((r, i) => (
@@ -203,7 +221,7 @@ export default async function DashboardPage() {
               </div>
             ) : null}
 
-            {latestOpportunity.meetsEntryRules ? (
+            {latestOpportunity.detail.buySteps.length > 0 && latestOpportunity.detail.sellSteps.length > 0 ? (
               <>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
                   O que fazer agora
@@ -213,9 +231,12 @@ export default async function DashboardPage() {
                   sellSteps={latestOpportunity.detail.sellSteps}
                   netMzn={Number(latestOpportunity.netProfitMediumMzn)}
                 />
-                <div className="mt-4">
+                <div className="mt-4 flex flex-wrap gap-3">
                   <Link href={`/trades/new?opportunityId=${latestOpportunity.id}`}>
                     <Button>Já executei — registar operação</Button>
+                  </Link>
+                  <Link href={`/operacoes/nova?opportunityId=${latestOpportunity.id}`}>
+                    <Button variant="secondary">Comprei — falta vender</Button>
                   </Link>
                 </div>
               </>

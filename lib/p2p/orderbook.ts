@@ -70,6 +70,12 @@ export type FillStep = {
   usdtAmount: number;
   monthOrders: number | null;
   monthFinishRate: number | null;
+  /** Limites do anúncio em si (não desta operação) — quanto é preciso
+   *  negociar no mínimo, e o máximo que este comerciante aceita de uma vez.
+   *  Mostrado nos cards para explicar, sem cálculo nenhum, porque um preço
+   *  óptimo às vezes não é usável (limite maior do que o capital). */
+  minMzn: number;
+  maxMzn: number;
 };
 
 export type ExecutionResult = {
@@ -101,6 +107,7 @@ export function simulateBuyUsdt(askAds: Ad[], capitalMzn: number): ExecutionResu
       advNo: ad.advNo, merchantName: ad.merchantName, merchantId: ad.merchantId,
       price: ad.price, mznUsed: use, usdtAmount: usdt,
       monthOrders: ad.monthOrders, monthFinishRate: ad.monthFinishRate,
+      minMzn: ad.minMzn, maxMzn: cap,
     });
     usdtTotal += usdt;
     remaining -= use;
@@ -132,6 +139,7 @@ export function simulateSellUsdt(bidAds: Ad[], usdtAmount: number): ExecutionRes
       advNo: ad.advNo, merchantName: ad.merchantName, merchantId: ad.merchantId,
       price: ad.price, mznUsed: mzn, usdtAmount: useUsdt,
       monthOrders: ad.monthOrders, monthFinishRate: ad.monthFinishRate,
+      minMzn: ad.minMzn, maxMzn: capMzn,
     });
     mznTotal += mzn;
     remainingUsdt -= useUsdt;
@@ -140,4 +148,40 @@ export function simulateSellUsdt(bidAds: Ad[], usdtAmount: number): ExecutionRes
   const vwap = usedUsdt > 0 ? mznTotal / usedUsdt : null;
   const limiting = remainingUsdt > 0.0001 ? "liquidez/limites insuficientes para vender 100% do USDT" : null;
   return { inputAmount: usdtAmount, inputUsed: usedUsdt, outputAmount: mznTotal, vwapPrice: vwap, steps, fullyFilled: remainingUsdt <= 0.0001, limitingFactor: limiting };
+}
+
+/** Como simulateBuyUsdt, mas com um alvo em USDT em vez de um orçamento em
+ *  MZN — usado pelo modo "equilibrado" quando é a capacidade de venda (não
+ *  o capital) que decide quanto vale a pena comprar. Nunca gasta mais do
+ *  que `maxMzn`. */
+export function simulateBuyUsdtTarget(askAds: Ad[], targetUsdt: number, maxMzn: number): ExecutionResult {
+  const pool = askAds.filter((a) => a.side === "SELL" && a.price > 0).sort((a, b) => a.price - b.price);
+  let remainingUsdt = targetUsdt;
+  let remainingMzn = maxMzn;
+  const steps: FillStep[] = [];
+  let mznTotal = 0;
+  let usdtTotal = 0;
+  for (const ad of pool) {
+    if (remainingUsdt <= 0 || remainingMzn <= 0) break;
+    const capMznAd = Math.min(maxMznExecutable(ad), remainingMzn);
+    if (capMznAd <= 0) continue;
+    if (ad.minMzn > capMznAd) continue;
+    const capUsdtAd = capMznAd / ad.price;
+    const useUsdt = Math.min(remainingUsdt, capUsdtAd);
+    const useMzn = useUsdt * ad.price;
+    if (useMzn < ad.minMzn) continue;
+    steps.push({
+      advNo: ad.advNo, merchantName: ad.merchantName, merchantId: ad.merchantId,
+      price: ad.price, mznUsed: useMzn, usdtAmount: useUsdt,
+      monthOrders: ad.monthOrders, monthFinishRate: ad.monthFinishRate,
+      minMzn: ad.minMzn, maxMzn: maxMznExecutable(ad),
+    });
+    mznTotal += useMzn;
+    usdtTotal += useUsdt;
+    remainingUsdt -= useUsdt;
+    remainingMzn -= useMzn;
+  }
+  const vwap = usdtTotal > 0 ? mznTotal / usdtTotal : null;
+  const limiting = remainingUsdt > 0.0001 ? "liquidez/limites insuficientes para completar a compra alvo" : null;
+  return { inputAmount: maxMzn, inputUsed: mznTotal, outputAmount: usdtTotal, vwapPrice: vwap, steps, fullyFilled: remainingUsdt <= 0.0001, limitingFactor: limiting };
 }

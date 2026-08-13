@@ -6,7 +6,7 @@
  * (Secção 10 / "Condições objetivas").
  */
 import { ALL_SCENARIOS, CostScenario } from "./fees";
-import { Ad, ExecutionResult, simulateBuyUsdt, simulateSellUsdt } from "./orderbook";
+import { Ad, ExecutionResult, simulateBuyUsdt, simulateBuyUsdtTarget, simulateSellUsdt } from "./orderbook";
 
 export type MarketSummary = {
   bestAsk: number | null;
@@ -50,13 +50,7 @@ export type RoundTrip = {
   residualMarkedMzn: number;
 };
 
-/** Compra USDT com `capitalMzn` e revende de imediato — o resíduo não
- *  vendido (perna de venda parcialmente preenchida) é marcado a mercado ao
- *  preço do ask em vez de contado como perda, ver p2p_mzn_analyzer/analysis.py. */
-export function roundTripForCapital(askAds: Ad[], bidAds: Ad[], capitalMzn: number): RoundTrip {
-  const buy = simulateBuyUsdt(askAds, capitalMzn);
-  const sell = simulateSellUsdt(bidAds, buy.outputAmount);
-
+function combineRoundTrip(buy: ExecutionResult, sell: ExecutionResult, askAds: Ad[], capitalMzn: number): RoundTrip {
   const residualUsdt = buy.outputAmount - sell.inputUsed;
   const markPrice = askAds.find((a) => a.side === "SELL")?.price ?? sell.vwapPrice ?? buy.vwapPrice ?? 0;
   const residualMarkedMzn = residualUsdt * markPrice;
@@ -70,6 +64,76 @@ export function roundTripForCapital(askAds: Ad[], bidAds: Ad[], capitalMzn: numb
     grossProfitMzn: gross, grossPct, nOrders,
     residualUsdt, residualMarkedMzn,
   };
+}
+
+/** Compra USDT com `capitalMzn` e revende de imediato — o resíduo não
+ *  vendido (perna de venda parcialmente preenchida) é marcado a mercado ao
+ *  preço do ask em vez de contado como perda, ver p2p_mzn_analyzer/analysis.py.
+ *  Usa o capital todo, por isso pode precisar de várias contrapartes de
+ *  cada lado (ver roundTripBalanced para a alternativa "poucos pontos"). */
+export function roundTripForCapital(askAds: Ad[], bidAds: Ad[], capitalMzn: number): RoundTrip {
+  const buy = simulateBuyUsdt(askAds, capitalMzn);
+  const sell = simulateSellUsdt(bidAds, buy.outputAmount);
+  return combineRoundTrip(buy, sell, askAds, capitalMzn);
+}
+
+export type BalancedRoundTrip = RoundTrip & {
+  /** `null` = sem limite (usa o livro todo desse lado). */
+  maxBuyAds: number | null;
+  maxSellAds: number | null;
+  /** Capital configurado que não coube nesta viagem — mostrado sempre de
+   *  forma explícita, nunca escondido nem forçado a mais ordens. */
+  unusedCapitalMzn: number;
+};
+
+const SELL_CAPACITY_PROBE_USDT = 1e12;
+
+/**
+ * Alternativa ao "usa o capital todo": limita a viagem a, no máximo,
+ * `maxBuyAds`/`maxSellAds` comerciantes de cada lado (`null` = sem limite
+ * nesse lado) e negoceia o MAIOR valor que cabe ao mesmo tempo na compra E
+ * na venda — nunca compra mais USDT do que consegue vender de volta a essas
+ * contrapartes. O que sobrar do capital configurado fica de fora (ver
+ * `unusedCapitalMzn`), nunca é forçado através de mais ordens.
+ *
+ * Assimétrico de propósito: "comprar de 1, vender a vários" é
+ * `{ maxBuyAds: 1, maxSellAds: null }` — só limita o lado que faz sentido
+ * limitar, o outro usa o livro todo como o modo "capital total".
+ */
+export function roundTripLimited(
+  askAds: Ad[],
+  bidAds: Ad[],
+  capitalMzn: number,
+  { maxBuyAds, maxSellAds }: { maxBuyAds: number | null; maxSellAds: number | null }
+): BalancedRoundTrip {
+  const asksPool = askAds.filter((a) => a.side === "SELL" && a.price > 0).sort((a, b) => a.price - b.price);
+  const bidsPool = bidAds.filter((b) => b.side === "BUY" && b.price > 0).sort((a, b) => b.price - a.price);
+
+  const asksLimited = maxBuyAds !== null ? asksPool.slice(0, maxBuyAds) : asksPool;
+  const bidsLimited = maxSellAds !== null ? bidsPool.slice(0, maxSellAds) : bidsPool;
+
+  const buyFull = simulateBuyUsdt(asksLimited, capitalMzn);
+
+  // Só vale a pena "aparar" a compra para caber na venda quando a venda
+  // também está limitada — com o livro de venda todo disponível, ele quase
+  // sempre absorve o que for comprado (e se não absorver, o resíduo já fica
+  // visível como sempre, via trip.residualUsdt).
+  let buy: ExecutionResult;
+  if (maxSellAds === null) {
+    buy = buyFull;
+  } else {
+    const sellCapacityProbe = simulateSellUsdt(bidsLimited, SELL_CAPACITY_PROBE_USDT);
+    const sellCapacityUsdt = sellCapacityProbe.inputUsed;
+    buy =
+      buyFull.outputAmount <= sellCapacityUsdt + 1e-9
+        ? buyFull
+        : simulateBuyUsdtTarget(asksLimited, sellCapacityUsdt, capitalMzn);
+  }
+
+  const sell = simulateSellUsdt(bidsLimited, buy.outputAmount);
+  const trip = combineRoundTrip(buy, sell, asksLimited, capitalMzn);
+
+  return { ...trip, maxBuyAds, maxSellAds, unusedCapitalMzn: Math.max(0, capitalMzn - buy.inputUsed) };
 }
 
 export type NetScenario = { feeMzn: number; netMzn: number; netPct: number };

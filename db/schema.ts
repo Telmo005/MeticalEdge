@@ -137,6 +137,49 @@ export const trades = meticalEdge.table("trades", {
 export type Trade = typeof trades.$inferSelect;
 export type NewTrade = typeof trades.$inferInsert;
 
+/**
+ * Operação de duas pernas em curso: compra já feita, venda ainda por
+ * encontrar. Existe porque nem sempre a compra e a venda acontecem juntas —
+ * às vezes o preço de venda bom desaparece entretanto, e o capital fica
+ * "preso" nesta operação até aparecer um comprador ao preço-alvo (ou
+ * melhor). O motor de scan (lib/p2p/scan.ts) vigia isto e avisa sozinho.
+ * Ao finalizar, gera uma linha em `trades` (histórico) e faz o capital
+ * evoluir — mesma lógica de lib/actions/trades.ts, só que em dois passos.
+ */
+export const pendingOperations = meticalEdge.table("pending_operations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  opportunityId: uuid("opportunity_id").references(() => opportunities.id, { onDelete: "set null" }),
+  status: text("status", { enum: ["aguardando_venda", "concluida", "cancelada"] })
+    .notNull().default("aguardando_venda"),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+
+  // Perna de compra — preenchida ao iniciar a operação.
+  capitalUsedMzn: numeric("capital_used_mzn", { precision: 14, scale: 2 }).notNull(),
+  buyPrice: numeric("buy_price", { precision: 10, scale: 4 }).notNull(),
+  usdtAmount: numeric("usdt_amount", { precision: 18, scale: 8 }).notNull(),
+
+  /** Preço de venda que tornava a operação lucrativa quando foi iniciada —
+   *  o scan usa isto para saber quando voltar a avisar ("apareceu alguém a
+   *  pagar isto ou mais"). */
+  targetSellPrice: numeric("target_sell_price", { precision: 10, scale: 4 }),
+
+  // Perna de venda — preenchida só ao finalizar.
+  sellPrice: numeric("sell_price", { precision: 10, scale: 4 }),
+  mznReceivedGross: numeric("mzn_received_gross", { precision: 14, scale: 2 }),
+  feesPaidMzn: numeric("fees_paid_mzn", { precision: 14, scale: 2 }),
+  netProfitMzn: numeric("net_profit_mzn", { precision: 14, scale: 2 }),
+  finalizedAt: timestamp("finalized_at", { withTimezone: true }),
+  tradeId: uuid("trade_id").references(() => trades.id, { onDelete: "set null" }),
+
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("pending_operations_status_idx").on(t.status),
+  index("pending_operations_started_at_idx").on(t.startedAt.desc()),
+]);
+export type PendingOperation = typeof pendingOperations.$inferSelect;
+export type NewPendingOperation = typeof pendingOperations.$inferInsert;
+
 export const capitalLedger = meticalEdge.table("capital_ledger", {
   id: uuid("id").primaryKey().defaultRandom(),
   changedAt: timestamp("changed_at", { withTimezone: true }).notNull().defaultNow(),

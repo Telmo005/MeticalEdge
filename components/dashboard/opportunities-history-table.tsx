@@ -14,6 +14,14 @@ import type { Opportunity } from "@/db/schema";
 const PAGE_SIZE = 10;
 type SortKey = "detectedAt" | "buyVwap" | "sellVwap" | "netPctMedium" | "status";
 
+const STATUS_LABEL: Record<string, string> = {
+  detected: "Avaliada",
+  alerted: "Notificada",
+  traded: "Executada",
+  expired: "Expirada",
+  dismissed: "Dispensada",
+};
+
 function timeAgo(date: Date): string {
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
   if (seconds < 60) return `${seconds}s atrás`;
@@ -29,7 +37,9 @@ export function OpportunitiesHistoryTable({ opportunities }: { opportunities: Op
   const filtered = useMemo(() => {
     if (!query.trim()) return opportunities;
     const q = query.trim().toLowerCase();
-    return opportunities.filter((o) => o.status.toLowerCase().includes(q));
+    return opportunities.filter(
+      (o) => o.status.toLowerCase().includes(q) || (STATUS_LABEL[o.status] ?? "").toLowerCase().includes(q)
+    );
   }, [opportunities, query]);
 
   const { sorted, sortKey, sortDir, toggleSort } = useSort<Opportunity, SortKey>(
@@ -55,7 +65,7 @@ export function OpportunitiesHistoryTable({ opportunities }: { opportunities: Op
       <TableFilterInput
         value={query}
         onChange={(v) => { setQuery(v); goToPage(1); }}
-        placeholder="Filtrar por estado (detected, alerted, traded...)"
+        placeholder="Filtrar por estado (avaliada, notificada, executada...)"
       />
       <ScrollTable>
         <table className="w-full text-sm">
@@ -84,7 +94,7 @@ export function OpportunitiesHistoryTable({ opportunities }: { opportunities: Op
                   <td className="tabular px-3 py-2 text-right">{formatPct(o.netPctMedium)}</td>
                   <td className="px-3 py-2">
                     <Badge tone={o.status === "alerted" || o.status === "traded" ? "good" : "neutral"}>
-                      {o.status}
+                      {STATUS_LABEL[o.status] ?? o.status}
                     </Badge>
                   </td>
                 </tr>

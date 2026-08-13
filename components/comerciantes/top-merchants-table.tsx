@@ -13,6 +13,12 @@ import type { TopMerchant } from "@/lib/p2p/analysis";
 const PAGE_SIZE = 20;
 type SortKey = "merchantName" | "merchantType" | "monthOrders" | "monthFinishRate" | "priceMin";
 
+function merchantTypeLabel(type: string): string {
+  if (type.toLowerCase() === "merchant") return "Comerciante verificado";
+  if (type.toLowerCase() === "user") return "Utilizador comum";
+  return type;
+}
+
 export function TopMerchantsTable({ rows }: { rows: TopMerchant[] }) {
   const [query, setQuery] = useState("");
 
@@ -66,7 +72,7 @@ export function TopMerchantsTable({ rows }: { rows: TopMerchant[] }) {
               pageItems.map((m) => (
                 <tr key={m.merchantId} className="border-t border-[var(--border)]">
                   <td className="px-3 py-2">{m.merchantName}</td>
-                  <td className="px-3 py-2 text-[var(--muted)]">{m.merchantType}</td>
+                  <td className="px-3 py-2 text-[var(--muted)]">{merchantTypeLabel(m.merchantType)}</td>
                   <td className="px-3 py-2 text-[var(--muted)]">
                     {m.sides.includes("BUY") && m.sides.includes("SELL")
                       ? "compra + venda"
