@@ -33,7 +33,10 @@ export const binanceP2PAdapter: P2PPlatformAdapter = {
   id: "binance_p2p",
   label: "Binance P2P",
   async fetchAds(asset, fiat, side) {
-    const raw = await fetchAllAds(asset, fiat, side);
+    // maxPages=3 (não os 10 por omissão) — com 10 pares no scan
+    // internacional, profundidade total do livro adicionaria latência sem
+    // ajudar: só precisamos do melhor preço, não da liquidez inteira.
+    const raw = await fetchAllAds(asset, fiat, side, 3, 20);
     return raw.map(normalize);
   },
 };

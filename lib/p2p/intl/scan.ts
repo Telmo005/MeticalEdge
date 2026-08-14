@@ -99,14 +99,28 @@ async function scanPair(cfg: PairConfig): Promise<IntlScanResult[]> {
   ]);
 }
 
+const PAIR_BATCH_SIZE = 3;
+
+/**
+ * Corre os pares em lotes pequenos (não todos de uma vez, não um a um):
+ * tudo de uma vez arrisca disparar a protecção anti-bot do Bybit (visto ao
+ * vivo — ECONNRESET a meio de uma rajada de pedidos); um a um, com 10 pares
+ * × 4 pedidos cada, arrisca estourar o limite de 60s da função serverless.
+ */
 export async function runIntlArbitrageScan(): Promise<IntlScanResult[]> {
   const results: IntlScanResult[] = [];
-  for (const cfg of TARGET_PAIRS) {
-    try {
-      results.push(...(await scanPair(cfg)));
-    } catch (err) {
-      results.push({ pair: cfg.pairLabel, skipped: err instanceof Error ? err.message : "erro desconhecido" });
-    }
+  for (let i = 0; i < TARGET_PAIRS.length; i += PAIR_BATCH_SIZE) {
+    const batch = TARGET_PAIRS.slice(i, i + PAIR_BATCH_SIZE);
+    const batchResults = await Promise.all(
+      batch.map(async (cfg) => {
+        try {
+          return await scanPair(cfg);
+        } catch (err) {
+          return [{ pair: cfg.pairLabel, skipped: err instanceof Error ? err.message : "erro desconhecido" }];
+        }
+      })
+    );
+    results.push(...batchResults.flat());
   }
   return results;
 }

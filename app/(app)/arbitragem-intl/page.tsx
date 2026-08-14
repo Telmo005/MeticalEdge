@@ -9,10 +9,10 @@ export default async function ArbitragemIntlPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-lg font-semibold">Arbitragem P2P internacional — Fase 1</h1>
+        <h1 className="text-lg font-semibold">Arbitragem P2P internacional</h1>
         <p className="text-sm text-[var(--muted)]">
-          Validação de spreads entre plataformas ({TARGET_PAIRS.map((p) => p.pairLabel).join(", ")}),
-          independente do motor USDT/MZN. Ver STRATEGY.md e .planning/PHASE1_PLAN.md.
+          Compara Binance P2P com Bybit P2P em {TARGET_PAIRS.length} pares ({TARGET_PAIRS.map((p) => p.pairLabel).join(", ")})
+          e mostra onde comprar barato e vender caro agora. Independente do motor USDT/MZN.
         </p>
       </div>
 

@@ -29,12 +29,22 @@ export const CAPITAL_USD = 30_000;
 export const DEFAULT_COSTS_PCT = { buyPct: 0.015, sellPct: 0.02 };
 export const MIN_NET_PCT_VIABLE = 1;
 
-/** Pares activos — Binance P2P testado ao vivo com anúncios reais nos dois
- *  lados (2026-08-14). O motor de scan testa as duas direcções
- *  (Binance→Bybit e Bybit→Binance) para cada um. */
+/** Pares activos — Binance P2P e Bybit P2P testados ao vivo com anúncios
+ *  reais dos dois lados em cada um (2026-08-14 e 2026-08-15). O motor de
+ *  scan testa as duas direcções (Binance→Bybit e Bybit→Binance) para cada
+ *  par — mais pares activos = mais hipóteses de apanhar uma oportunidade
+ *  real num dado momento, sem adicionar mais plataformas (mantém simples). */
 export const TARGET_PAIRS: PairConfig[] = [
   { asset: "USDT", fiat: "KES", pairLabel: "USDT/KES", region: "Quénia", platformBuy: binanceP2PAdapter, platformSell: bybitP2PAdapter },
   { asset: "USDT", fiat: "PEN", pairLabel: "USDT/PEN", region: "Peru", platformBuy: binanceP2PAdapter, platformSell: bybitP2PAdapter },
+  { asset: "USDT", fiat: "VND", pairLabel: "USDT/VND", region: "Vietname", platformBuy: binanceP2PAdapter, platformSell: bybitP2PAdapter },
+  { asset: "USDT", fiat: "INR", pairLabel: "USDT/INR", region: "Índia", platformBuy: binanceP2PAdapter, platformSell: bybitP2PAdapter },
+  { asset: "USDT", fiat: "PHP", pairLabel: "USDT/PHP", region: "Filipinas", platformBuy: binanceP2PAdapter, platformSell: bybitP2PAdapter },
+  { asset: "USDT", fiat: "EGP", pairLabel: "USDT/EGP", region: "Egipto", platformBuy: binanceP2PAdapter, platformSell: bybitP2PAdapter },
+  { asset: "USDT", fiat: "PKR", pairLabel: "USDT/PKR", region: "Paquistão", platformBuy: binanceP2PAdapter, platformSell: bybitP2PAdapter },
+  { asset: "USDT", fiat: "COP", pairLabel: "USDT/COP", region: "Colômbia", platformBuy: binanceP2PAdapter, platformSell: bybitP2PAdapter },
+  { asset: "USDT", fiat: "ARS", pairLabel: "USDT/ARS", region: "Argentina", platformBuy: binanceP2PAdapter, platformSell: bybitP2PAdapter },
+  { asset: "USDT", fiat: "ZAR", pairLabel: "USDT/ZAR", region: "África do Sul", platformBuy: binanceP2PAdapter, platformSell: bybitP2PAdapter },
 ];
 
 /**
