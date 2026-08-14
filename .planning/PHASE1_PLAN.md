@@ -28,8 +28,16 @@
 > `/arbitragem-intl`, cron externo já configurado pelo utilizador. Pares
 > activos por agora: **USDT/KES e USDT/PEN** — NGN e BRL ficaram fora
 > porque a Binance não tem anúncios activos em nenhum dos dois (ver
-> STRATEGY.md). Faltam ~7 dias de dados reais antes da decisão GO/NO-GO da
-> Task 1.5.
+> STRATEGY.md).
+>
+> **Actualização 2026-08-15:** a pedido do utilizador, deixámos de tratar
+> isto como "espera uma semana antes de veres nada" — o painel
+> `/arbitragem-intl` mostra directamente "comprar em X, vender em Y, lucro
+> estimado" para quem quiser olhar hoje, não uma tabela de validação.
+> Alargado de 2 para 10 pares (todos testados ao vivo nos dois lados antes
+> de entrarem). O código só foi publicado (commit + push + deploy) nesta
+> data — antes disso o cron do utilizador estava a apontar para uma versão
+> da app sem nada disto, daí não aparecer nada.
 
 ---
 
