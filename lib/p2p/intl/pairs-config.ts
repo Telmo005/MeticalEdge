@@ -1,0 +1,63 @@
+/**
+ * Pares/regiões alvo da Fase 1 (STRATEGY.md secção 2), com a plataforma de
+ * origem (sempre Binance P2P — cobertura global, cliente já existe) e a
+ * plataforma de destino por região.
+ *
+ * Segunda plataforma: Bybit P2P (endpoint público confirmado live,
+ * 2026-08-14 — ver lib/p2p/intl/bybit-adapter.ts). OKX P2P ficou de fora
+ * por agora: o endpoint existe mas está atrás de protecção anti-bot que só
+ * tem uma implementação de referência conhecida a lidar com 403s — não
+ * vale o risco de fiabilidade para a Fase 1. MEXC/KuCoin por confirmar
+ * depois se for preciso um terceiro ponto de comparação.
+ */
+import { binanceP2PAdapter } from "./binance-adapter";
+import { bybitP2PAdapter } from "./bybit-adapter";
+import type { P2PPlatformAdapter } from "./types";
+
+export type PairConfig = {
+  asset: string;
+  fiat: string;
+  pairLabel: string; // "USDT/NGN"
+  region: string;
+  platformBuy: P2PPlatformAdapter;
+  platformSell: P2PPlatformAdapter | null;
+};
+
+export const CAPITAL_USD = 30_000;
+
+/** Estimativa Fase 1 — substituída por custos reais medidos na Fase 2. */
+export const DEFAULT_COSTS_PCT = { buyPct: 0.015, sellPct: 0.02 };
+export const MIN_NET_PCT_VIABLE = 1;
+
+/** Pares activos — Binance P2P testado ao vivo com anúncios reais nos dois
+ *  lados (2026-08-14). O motor de scan testa as duas direcções
+ *  (Binance→Bybit e Bybit→Binance) para cada um. */
+export const TARGET_PAIRS: PairConfig[] = [
+  { asset: "USDT", fiat: "KES", pairLabel: "USDT/KES", region: "Quénia", platformBuy: binanceP2PAdapter, platformSell: bybitP2PAdapter },
+  { asset: "USDT", fiat: "PEN", pairLabel: "USDT/PEN", region: "Peru", platformBuy: binanceP2PAdapter, platformSell: bybitP2PAdapter },
+];
+
+/**
+ * Pares retirados da lista activa — Binance P2P devolve ZERO anúncios para
+ * os dois, confirmado por duas fontes independentes em 2026-08-14:
+ *
+ * - USDT/NGN: a Binance suspendeu TODOS os serviços de Naira (incluindo
+ *   P2P) em Fevereiro/2024. Continua suspenso em Agosto/2026, sem
+ *   indicação de retoma (processo de $79.5 mil milhões contra a Binance
+ *   ainda em litígio). Confirmado por notícia + teste directo à API.
+ * - USDT/BRL: sem confirmação por notícia de banimento formal, mas o
+ *   agregador independente p2p.army (não relacionado com o ambiente de
+ *   teste desta app) também não mostra nenhum anúncio Binance BRL neste
+ *   momento — não é um artefacto de IP/geo-bloqueio do lado deste código,
+ *   é a Binance a não ter livro activo neste par agora.
+ *
+ * Mantidos aqui (fora de TARGET_PAIRS, portanto o cron nunca lhes toca)
+ * para não perder o trabalho de mapeamento caso valha a pena reactivar com
+ * OUTRA plataforma de origem (nenhuma das duas pode usar Binance como
+ * `platformBuy` enquanto isto não mudar) — precisaria de uma pesquisa de
+ * plataforma dedicada, não só ligar o Bybit como está feito para KES/PEN.
+ */
+export const INACTIVE_PAIRS: { asset: string; fiat: string; pairLabel: string; region: string; reason: string }[] = [
+  { asset: "USDT", fiat: "NGN", pairLabel: "USDT/NGN", region: "Nigéria", reason: "Binance suspendeu P2P NGN em Fev/2024, sem retoma" },
+  { asset: "USDT", fiat: "BRL", pairLabel: "USDT/BRL", region: "Brasil", reason: "Binance sem anúncios activos neste par (confirmado via p2p.army)" },
+];

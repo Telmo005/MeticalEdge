@@ -223,6 +223,37 @@ export const capitalLedger = meticalEdge.table("capital_ledger", {
 ]);
 export type CapitalLedgerEntry = typeof capitalLedger.$inferSelect;
 
+/**
+ * Arbitragem P2P internacional (USDT/NGN, USDT/BRL, ...) — Fase 1
+ * (validação de mercado, ver .planning/PHASE1_PLAN.md). Tabela própria,
+ * independente do motor USDT/MZN acima: fiats diferentes, sem capital real
+ * nem execução nesta fase, só recolha de spreads entre duas plataformas
+ * P2P para o mesmo par/fiat.
+ */
+export const intlOpportunities = meticalEdge.table("intl_opportunities", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  pair: text("pair").notNull(), // "USDT/NGN"
+  region: text("region").notNull(), // "Nigeria"
+  platformBuy: text("platform_buy").notNull(), // "binance_p2p"
+  platformSell: text("platform_sell").notNull(), // "bybit_p2p"
+  bestAsk: numeric("best_ask", { precision: 18, scale: 4 }), // preço de compra na platformBuy
+  bestBid: numeric("best_bid", { precision: 18, scale: 4 }), // preço de venda na platformSell
+  spreadGrossPct: numeric("spread_gross_pct", { precision: 8, scale: 4 }),
+  spreadNetPct: numeric("spread_net_pct", { precision: 8, scale: 4 }),
+  capitalUsd: numeric("capital_usd", { precision: 14, scale: 2 }).notNull(),
+  profitAtCapitalUsd: numeric("profit_at_capital_usd", { precision: 14, scale: 2 }),
+  isViable: boolean("is_viable").notNull().default(false),
+  nAdsBuy: integer("n_ads_buy").notNull().default(0),
+  nAdsSell: integer("n_ads_sell").notNull().default(0),
+  raw: jsonb("raw"), // topo dos anúncios de cada lado, para auditoria
+  collectedAt: timestamp("collected_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("intl_opportunities_pair_collected_at_idx").on(t.pair, t.collectedAt.desc()),
+  index("intl_opportunities_viable_collected_at_idx").on(t.isViable, t.collectedAt.desc()),
+]);
+export type IntlOpportunity = typeof intlOpportunities.$inferSelect;
+export type NewIntlOpportunity = typeof intlOpportunities.$inferInsert;
+
 /** Registo de qualquer erro do lado do servidor — apanhado globalmente por
  *  instrumentation.ts (onRequestError), não precisa de try/catch manual
  *  espalhado pelo código. Mesmo padrão do "payment gateway" (error_logs). */

@@ -2,7 +2,7 @@
 
 import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, BookOpen, Calculator, ListChecks, Hourglass, Settings, Users, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, BookOpen, Calculator, ListChecks, Hourglass, Settings, Users, Globe, type LucideIcon } from "lucide-react";
 import { ProcessingOverlay } from "@/components/ui/processing-overlay";
 import { cn } from "@/lib/utils";
 
@@ -13,6 +13,7 @@ export const NAV_ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/simulacao", label: "Simulação", icon: Calculator },
   { href: "/comerciantes", label: "Comerc.", icon: Users },
   { href: "/trades", label: "Histórico", icon: ListChecks },
+  { href: "/arbitragem-intl", label: "Internacional", icon: Globe },
   { href: "/settings", label: "Config.", icon: Settings },
 ];
 
@@ -22,6 +23,7 @@ const FULL_LABEL: Record<string, string> = {
   "Comerc.": "Comerciantes",
   "Em curso": "Operações em curso",
   Histórico: "Histórico de operações",
+  Internacional: "Arbitragem internacional (Fase 1)",
 };
 
 function isActive(pathname: string, href: string) {
