@@ -23,7 +23,8 @@ export type PairConfig = {
   platformSell: P2PPlatformAdapter | null;
 };
 
-export const CAPITAL_USD = 30_000;
+/** Capital agora é configurável em /settings (settings.intl_capital_usd) —
+ *  ver lib/p2p/intl/scan.ts, que o lê da BD a cada varredura. */
 
 /** Estimativa Fase 1 — substituída por custos reais medidos na Fase 2. */
 export const DEFAULT_COSTS_PCT = { buyPct: 0.015, sellPct: 0.02 };

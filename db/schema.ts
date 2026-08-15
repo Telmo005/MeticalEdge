@@ -62,6 +62,10 @@ export const settings = meticalEdge.table("settings", {
    *  Desligado por omissão até haver um número configurado. */
   smsAlertsEnabled: boolean("sms_alerts_enabled").notNull().default(false),
   alertPhoneE164: text("alert_phone_e164"),
+  /** Capital para a arbitragem P2P internacional (lib/p2p/intl/) — separado
+   *  do capital MZN acima porque são estratégias e riscos independentes.
+   *  Usado para calcular o lucro estimado por oportunidade no scan. */
+  intlCapitalUsd: numeric("intl_capital_usd", { precision: 14, scale: 2 }).notNull().default("30000"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 export type Settings = typeof settings.$inferSelect;

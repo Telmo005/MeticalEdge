@@ -124,6 +124,22 @@ export async function setCapitalFormAction(formData: FormData) {
   await setCapitalAction(value);
 }
 
+/** Capital da arbitragem internacional (lib/p2p/intl/) — independente do
+ *  capital MZN acima, sem ledger próprio (ainda não há trades reportados
+ *  nessa frente, só simulação de spreads). */
+export async function setIntlCapitalFormAction(formData: FormData) {
+  await requireUser();
+  const value = Number(formData.get("intlCapitalUsd"));
+  if (!Number.isFinite(value) || value < 0) return;
+
+  await db
+    .update(settings)
+    .set({ intlCapitalUsd: value.toFixed(2), updatedAt: new Date() })
+    .where(eq(settings.id, true));
+
+  revalidatePath("/", "layout");
+}
+
 export async function updateRuleSettingsFormAction(formData: FormData) {
   await updateRuleSettingsAction({
     minNetPctAlert: Number(formData.get("minNetPctAlert")),

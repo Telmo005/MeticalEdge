@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getRecentIntlOpportunities } from "@/lib/queries";
 import { Card } from "@/components/ui/card";
 import { IntlOpportunitiesTable } from "@/components/arbitragem-intl/intl-opportunities-table";
@@ -9,10 +10,21 @@ export default async function ArbitragemIntlPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-lg font-semibold">Arbitragem P2P internacional</h1>
+        <h1 className="text-lg font-semibold">Arbitragem internacional</h1>
         <p className="text-sm text-[var(--muted)]">
           Compara Binance P2P com Bybit P2P em {TARGET_PAIRS.length} pares ({TARGET_PAIRS.map((p) => p.pairLabel).join(", ")})
-          e mostra onde comprar barato e vender caro agora. Independente do motor USDT/MZN.
+          e mostra onde comprar barato e vender caro agora.
+        </p>
+        <p className="mt-1 text-xs text-[var(--muted)]">
+          Motor e capital independentes do mercado local — ver{" "}
+          <Link href="/simulacao" className="text-[var(--accent-2)] hover:underline">
+            Simulação de lucro (MZN)
+          </Link>{" "}
+          para USDT/MZN, ou{" "}
+          <Link href="/settings" className="text-[var(--accent-2)] hover:underline">
+            Configurações
+          </Link>{" "}
+          para ajustar o capital usado aqui.
         </p>
       </div>
 

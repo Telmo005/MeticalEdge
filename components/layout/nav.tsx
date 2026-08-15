@@ -23,7 +23,7 @@ const FULL_LABEL: Record<string, string> = {
   "Comerc.": "Comerciantes",
   "Em curso": "Operações em curso",
   Histórico: "Histórico de operações",
-  Internacional: "Arbitragem internacional (Fase 1)",
+  Internacional: "Arbitragem internacional",
 };
 
 function isActive(pathname: string, href: string) {

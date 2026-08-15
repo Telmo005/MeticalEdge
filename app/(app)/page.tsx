@@ -7,6 +7,7 @@ import {
   getTradeStats,
   getPendingOperations,
   getCapitalPosition,
+  getRecentIntlOpportunities,
 } from "@/lib/queries";
 import { costPreferencesFrom } from "@/lib/cost-prefs";
 import { findBestAdPairs } from "@/lib/p2p/optimizer";
@@ -40,13 +41,26 @@ export default async function DashboardPage() {
     return <OnboardingWelcome />;
   }
 
-  const [snapshot, opportunitiesList, stats, pendingOps, capital] = await Promise.all([
+  const [snapshot, opportunitiesList, stats, pendingOps, capital, intlOpportunitiesList] = await Promise.all([
     getLatestSnapshot(),
     getRecentOpportunities(200),
     getTradeStats(),
     getPendingOperations(),
     getCapitalPosition(),
+    getRecentIntlOpportunities(40),
   ]);
+
+  // Só a leitura mais recente de cada combinação par+direcção, mesma lógica
+  // de components/arbitragem-intl/intl-opportunities-table.tsx — aqui só
+  // precisamos da melhor para um resumo de uma linha no painel principal.
+  const latestIntlByDirection = new Map<string, (typeof intlOpportunitiesList)[number]>();
+  for (const o of intlOpportunitiesList) {
+    const key = `${o.pair}:${o.platformBuy}:${o.platformSell}`;
+    if (!latestIntlByDirection.has(key)) latestIntlByDirection.set(key, o);
+  }
+  const bestIntlOpportunity = [...latestIntlByDirection.values()]
+    .filter((o) => o.isViable)
+    .sort((a, b) => Number(b.spreadNetPct) - Number(a.spreadNetPct))[0] ?? null;
 
   const [priceExtremes, askLifecycle, bidLifecycle, divergence, priceHistory] = await Promise.all([
     getPriceExtremes(),
@@ -112,6 +126,29 @@ export default async function DashboardPage() {
           </Card>
         </Link>
       ) : null}
+
+      <Link href="/arbitragem-intl">
+        <Card
+          className={`flex items-center justify-between gap-3 transition-colors hover:bg-[var(--surface-2)] ${
+            bestIntlOpportunity ? "border-l-4 border-l-[var(--good)]" : "border-l-4 border-l-[var(--border)]"
+          }`}
+        >
+          <div>
+            <p className="text-sm font-semibold text-[var(--foreground)]">Arbitragem internacional (Binance × Bybit)</p>
+            {bestIntlOpportunity ? (
+              <p className="text-xs text-[var(--muted)]">
+                Melhor agora: {bestIntlOpportunity.pair}, {formatPct(bestIntlOpportunity.spreadNetPct)} líquido — toca
+                para ver
+              </p>
+            ) : (
+              <p className="text-xs text-[var(--muted)]">Nenhuma oportunidade viável neste momento — toca para ver todas</p>
+            )}
+          </div>
+          <Badge tone={bestIntlOpportunity ? "good" : "neutral"}>
+            {latestIntlByDirection.size > 0 ? `${latestIntlByDirection.size} combinações` : "ver"}
+          </Badge>
+        </Card>
+      </Link>
 
       <section>
         <div className="mb-3 flex items-center justify-between">

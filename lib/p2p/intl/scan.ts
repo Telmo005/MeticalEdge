@@ -9,9 +9,10 @@
  * Fase 1 existe para validar. Cada direcção viável gera a sua própria
  * linha em `intl_opportunities`.
  */
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { intlOpportunities } from "@/db/schema";
-import { CAPITAL_USD, DEFAULT_COSTS_PCT, MIN_NET_PCT_VIABLE, TARGET_PAIRS, type PairConfig } from "./pairs-config";
+import { intlOpportunities, settings } from "@/db/schema";
+import { DEFAULT_COSTS_PCT, MIN_NET_PCT_VIABLE, TARGET_PAIRS, type PairConfig } from "./pairs-config";
 import { calculateOpportunity } from "./spread";
 import type { GenericAd, P2PPlatformAdapter } from "./types";
 
@@ -46,7 +47,8 @@ async function recordDirection(
   platformBuy: P2PPlatformAdapter,
   askAds: GenericAd[],
   platformSell: P2PPlatformAdapter,
-  bidAds: GenericAd[]
+  bidAds: GenericAd[],
+  capitalUsd: number
 ): Promise<IntlScanResult> {
   const direction = `${platformBuy.id}→${platformSell.id}`;
   const bestAsk = bestPrice(askAds, "SELL", "min");
@@ -57,7 +59,7 @@ async function recordDirection(
   }
 
   const opp = calculateOpportunity(bestAsk, bestBid, DEFAULT_COSTS_PCT, MIN_NET_PCT_VIABLE);
-  const profitAtCapitalUsd = (CAPITAL_USD * opp.spreadNetPct) / 100;
+  const profitAtCapitalUsd = (capitalUsd * opp.spreadNetPct) / 100;
 
   await db.insert(intlOpportunities).values({
     pair: cfg.pairLabel,
@@ -68,7 +70,7 @@ async function recordDirection(
     bestBid: bestBid.toFixed(4),
     spreadGrossPct: opp.spreadGrossPct.toFixed(4),
     spreadNetPct: opp.spreadNetPct.toFixed(4),
-    capitalUsd: CAPITAL_USD.toFixed(2),
+    capitalUsd: capitalUsd.toFixed(2),
     profitAtCapitalUsd: profitAtCapitalUsd.toFixed(2),
     isViable: opp.isViable,
     nAdsBuy: askAds.length,
@@ -79,7 +81,7 @@ async function recordDirection(
   return { pair: cfg.pairLabel, direction, isViable: opp.isViable, spreadNetPct: opp.spreadNetPct };
 }
 
-async function scanPair(cfg: PairConfig): Promise<IntlScanResult[]> {
+async function scanPair(cfg: PairConfig, capitalUsd: number): Promise<IntlScanResult[]> {
   if (!cfg.platformSell) {
     return [{ pair: cfg.pairLabel, skipped: "platformSell não configurado" }];
   }
@@ -94,8 +96,8 @@ async function scanPair(cfg: PairConfig): Promise<IntlScanResult[]> {
   ]);
 
   return Promise.all([
-    recordDirection(cfg, platformA, asksA, platformB, bidsB),
-    recordDirection(cfg, platformB, asksB, platformA, bidsA),
+    recordDirection(cfg, platformA, asksA, platformB, bidsB, capitalUsd),
+    recordDirection(cfg, platformB, asksB, platformA, bidsA, capitalUsd),
   ]);
 }
 
@@ -108,13 +110,16 @@ const PAIR_BATCH_SIZE = 3;
  * × 4 pedidos cada, arrisca estourar o limite de 60s da função serverless.
  */
 export async function runIntlArbitrageScan(): Promise<IntlScanResult[]> {
+  const [config] = await db.select({ intlCapitalUsd: settings.intlCapitalUsd }).from(settings).where(eq(settings.id, true)).limit(1);
+  const capitalUsd = Number(config?.intlCapitalUsd ?? 30_000);
+
   const results: IntlScanResult[] = [];
   for (let i = 0; i < TARGET_PAIRS.length; i += PAIR_BATCH_SIZE) {
     const batch = TARGET_PAIRS.slice(i, i + PAIR_BATCH_SIZE);
     const batchResults = await Promise.all(
       batch.map(async (cfg) => {
         try {
-          return await scanPair(cfg);
+          return await scanPair(cfg, capitalUsd);
         } catch (err) {
           return [{ pair: cfg.pairLabel, skipped: err instanceof Error ? err.message : "erro desconhecido" }];
         }
