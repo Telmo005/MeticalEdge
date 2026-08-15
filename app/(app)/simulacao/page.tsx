@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { getLatestSnapshot, getSettings, getCapitalPosition } from "@/lib/queries";
 import { costPreferencesFrom } from "@/lib/cost-prefs";
 import { roundTripForCapital, netByScenario, evaluateSellCounterparties } from "@/lib/p2p/analysis";
@@ -40,6 +39,7 @@ export default async function SimulacaoPage({
 
   const askAds: Ad[] = snapshot?.askAds ?? [];
   const bidAds: Ad[] = snapshot?.bidAds ?? [];
+  const referenceUsdMzn = snapshot?.referenceUsdMzn == null ? null : Number(snapshot.referenceUsdMzn);
 
   // Preferências de custo do utilizador (M-Pesa/e-Mola). Sem isto o lucro
   // mostrado ignorava por completo o que custa mover Meticais.
@@ -247,19 +247,11 @@ export default async function SimulacaoPage({
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold">Simulação de lucro (MZN)</h1>
+          <h1 className="text-lg font-semibold">Simulação de lucro</h1>
           <p className="text-sm text-[var(--muted)]">
             Quanto ganharias, em Meticais, se comprasses e revendesses USDT agora mesmo, para diferentes
             valores de capital. Baseado na última varredura do mercado, já com as taxas da Binance e o custo
             de mover dinheiro descontados.
-          </p>
-          <p className="mt-1 text-xs text-[var(--muted)]">
-            Isto é só o mercado local (USDT/MZN, uma plataforma). Para comprar numa plataforma e vender
-            noutra em pares internacionais, ver{" "}
-            <Link href="/arbitragem-intl" className="text-[var(--accent-2)] hover:underline">
-              Arbitragem internacional
-            </Link>
-            .
           </p>
         </div>
         <RefreshButton />
@@ -272,7 +264,7 @@ export default async function SimulacaoPage({
       ) : (
         <>
           <Card>
-            <SimulateForm defaultCapital={chosenCapital} mode={mode} />
+            <SimulateForm defaultCapital={chosenCapital} mode={mode} referenceUsdMzn={referenceUsdMzn} />
             {capital.lockedMzn > 0 ? (
               <p className="mt-4 rounded-md bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--muted)]">
                 Tens {formatMzn(capital.lockedMzn)} presos em {capital.lockedOperations}{" "}
@@ -361,6 +353,7 @@ export default async function SimulacaoPage({
                         grossProfitMzn={selected.trip.grossProfitMzn}
                         netMzn={selected.net.medio.netMzn}
                         costs={selected.net.medio.costs}
+                        referenceUsdMzn={referenceUsdMzn}
                       />
                     </div>
 

@@ -1,5 +1,5 @@
 import { CardLabel } from "@/components/ui/card";
-import { cn, formatMzn } from "@/lib/utils";
+import { cn, formatMzn, formatUsdApprox } from "@/lib/utils";
 import type { CostBreakdown } from "@/lib/p2p/fees";
 
 /**
@@ -14,11 +14,16 @@ export function CostBreakdown({
   grossProfitMzn,
   netMzn,
   costs,
+  referenceUsdMzn = null,
 }: {
   grossProfitMzn: number;
   netMzn: number;
   costs: CostBreakdown;
+  /** Taxa de referência USD/MZN — mostra "≈ X USD" ao lado do líquido para
+   *  quem pensa em dólares. Puramente informativo. */
+  referenceUsdMzn?: number | null;
 }) {
+  const usdApprox = formatUsdApprox(netMzn, referenceUsdMzn);
   const lines = [
     { label: "Taxas da Binance (por ordem)", value: costs.takerFeeMzn },
     { label: "Taxa de anúncio próprio", value: costs.makerFeeMzn },
@@ -44,14 +49,17 @@ export function CostBreakdown({
         ))}
         <li className="mt-1 flex items-center justify-between gap-3 border-t border-[var(--border)] pt-2">
           <span className="font-semibold">Fica para ti</span>
-          <span
-            className={cn(
-              "tabular font-bold",
-              netMzn >= 0 ? "text-[var(--good)]" : "text-[var(--critical)]"
-            )}
-          >
-            {netMzn >= 0 ? "+" : ""}
-            {formatMzn(netMzn)}
+          <span className="text-right">
+            <span
+              className={cn(
+                "tabular font-bold",
+                netMzn >= 0 ? "text-[var(--good)]" : "text-[var(--critical)]"
+              )}
+            >
+              {netMzn >= 0 ? "+" : ""}
+              {formatMzn(netMzn)}
+            </span>
+            {usdApprox ? <span className="block text-xs text-[var(--muted)]">{usdApprox}</span> : null}
           </span>
         </li>
       </ul>

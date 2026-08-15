@@ -1,7 +1,6 @@
 import { getSettings, getCapitalHistory, getRecentErrorLogs } from "@/lib/queries";
 import {
   setCapitalFormAction,
-  setIntlCapitalFormAction,
   setMinDisplayProfitFormAction,
   setMinNetProfitAlertFormAction,
   updateRuleSettingsFormAction,
@@ -54,32 +53,6 @@ export default async function SettingsPage() {
               type="number"
               step="0.01"
               defaultValue={config?.currentCapitalMzn ?? undefined}
-              className="w-full sm:w-48"
-            />
-          </div>
-          <SubmitButton pendingText="A actualizar...">Actualizar</SubmitButton>
-        </form>
-      </Card>
-
-      <Card>
-        <CardTitle>Capital para arbitragem internacional</CardTitle>
-        <p className="mb-4 mt-1 text-sm text-[var(--muted)]">
-          Independente do capital MZN acima — usado só para calcular o lucro estimado por oportunidade em{" "}
-          <a href="/arbitragem-intl" className="text-[var(--accent-2)] hover:underline">
-            /arbitragem-intl
-          </a>
-          . Ajusta ao que tens mesmo disponível para essa frente.
-        </p>
-        <form action={setIntlCapitalFormAction} className="flex flex-wrap items-end gap-3">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="intlCapitalUsd">Capital (USD)</Label>
-            <Input
-              id="intlCapitalUsd"
-              name="intlCapitalUsd"
-              type="number"
-              step="0.01"
-              min="0"
-              defaultValue={config?.intlCapitalUsd ?? undefined}
               className="w-full sm:w-48"
             />
           </div>

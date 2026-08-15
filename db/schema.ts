@@ -62,10 +62,6 @@ export const settings = meticalEdge.table("settings", {
    *  Desligado por omissão até haver um número configurado. */
   smsAlertsEnabled: boolean("sms_alerts_enabled").notNull().default(false),
   alertPhoneE164: text("alert_phone_e164"),
-  /** Capital para a arbitragem P2P internacional (lib/p2p/intl/) — separado
-   *  do capital MZN acima porque são estratégias e riscos independentes.
-   *  Usado para calcular o lucro estimado por oportunidade no scan. */
-  intlCapitalUsd: numeric("intl_capital_usd", { precision: 14, scale: 2 }).notNull().default("30000"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 export type Settings = typeof settings.$inferSelect;
@@ -226,64 +222,6 @@ export const capitalLedger = meticalEdge.table("capital_ledger", {
   index("capital_ledger_changed_at_idx").on(t.changedAt.desc()),
 ]);
 export type CapitalLedgerEntry = typeof capitalLedger.$inferSelect;
-
-/**
- * Arbitragem P2P internacional (USDT/NGN, USDT/BRL, ...) — Fase 1
- * (validação de mercado, ver .planning/PHASE1_PLAN.md). Tabela própria,
- * independente do motor USDT/MZN acima: fiats diferentes, sem capital real
- * nem execução nesta fase, só recolha de spreads entre duas plataformas
- * P2P para o mesmo par/fiat.
- */
-export const intlOpportunities = meticalEdge.table("intl_opportunities", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  pair: text("pair").notNull(), // "USDT/NGN"
-  region: text("region").notNull(), // "Nigeria"
-  platformBuy: text("platform_buy").notNull(), // "binance_p2p"
-  platformSell: text("platform_sell").notNull(), // "bybit_p2p"
-  bestAsk: numeric("best_ask", { precision: 18, scale: 4 }), // preço de compra na platformBuy
-  bestBid: numeric("best_bid", { precision: 18, scale: 4 }), // preço de venda na platformSell
-  spreadGrossPct: numeric("spread_gross_pct", { precision: 8, scale: 4 }),
-  spreadNetPct: numeric("spread_net_pct", { precision: 8, scale: 4 }),
-  capitalUsd: numeric("capital_usd", { precision: 14, scale: 2 }).notNull(),
-  profitAtCapitalUsd: numeric("profit_at_capital_usd", { precision: 14, scale: 2 }),
-  isViable: boolean("is_viable").notNull().default(false),
-  nAdsBuy: integer("n_ads_buy").notNull().default(0),
-  nAdsSell: integer("n_ads_sell").notNull().default(0),
-  raw: jsonb("raw"), // topo dos anúncios de cada lado, para auditoria
-  collectedAt: timestamp("collected_at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [
-  index("intl_opportunities_pair_collected_at_idx").on(t.pair, t.collectedAt.desc()),
-  index("intl_opportunities_viable_collected_at_idx").on(t.isViable, t.collectedAt.desc()),
-]);
-export type IntlOpportunity = typeof intlOpportunities.$inferSelect;
-export type NewIntlOpportunity = typeof intlOpportunities.$inferInsert;
-
-/**
- * Registo manual de ciclos de arbitragem internacional executados —
- * equivalente a `trades` (USDT/MZN) acima, mas sem ledger de capital
- * automático: aqui é só histórico para comparar lucro real vs. o estimado
- * por `intlOpportunities`, o capital em settings.intlCapitalUsd continua a
- * ajustar-se manualmente em /settings.
- */
-export const intlTrades = meticalEdge.table("intl_trades", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  pair: text("pair").notNull(),
-  region: text("region").notNull(),
-  platformBuy: text("platform_buy").notNull(),
-  platformSell: text("platform_sell").notNull(),
-  buyPrice: numeric("buy_price", { precision: 18, scale: 4 }).notNull(),
-  sellPrice: numeric("sell_price", { precision: 18, scale: 4 }).notNull(),
-  capitalUsedUsd: numeric("capital_used_usd", { precision: 14, scale: 2 }).notNull(),
-  feesPaidUsd: numeric("fees_paid_usd", { precision: 14, scale: 2 }).notNull().default("0"),
-  netProfitUsd: numeric("net_profit_usd", { precision: 14, scale: 2 }).notNull(),
-  notes: text("notes"),
-  executedAt: timestamp("executed_at", { withTimezone: true }).notNull().defaultNow(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [
-  index("intl_trades_executed_at_idx").on(t.executedAt.desc()),
-]);
-export type IntlTrade = typeof intlTrades.$inferSelect;
-export type NewIntlTrade = typeof intlTrades.$inferInsert;
 
 /** Registo de qualquer erro do lado do servidor — apanhado globalmente por
  *  instrumentation.ts (onRequestError), não precisa de try/catch manual

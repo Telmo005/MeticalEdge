@@ -37,26 +37,50 @@ const MODE_OPTIONS: { value: TradeMode; label: string; hint: string; icon: React
   },
 ];
 
+type Unit = "MZN" | "USD";
+
 export function SimulateForm({
   defaultCapital,
   mode,
+  referenceUsdMzn,
 }: {
   defaultCapital: number;
   mode: TradeMode;
+  /** Taxa de referência USD/MZN (não a taxa P2P) — só para converter o que
+   *  a pessoa digita em USD para o MZN que o resto da página usa por baixo.
+   *  Sem isto o campo em USD não tem para onde converter. */
+  referenceUsdMzn: number | null;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [unit, setUnit] = useState<Unit>("MZN");
   const [value, setValue] = useState(String(defaultCapital));
 
-  function goTo(nextCapital: string, nextMode: TradeMode) {
+  function goTo(nextCapitalMzn: string, nextMode: TradeMode) {
     startTransition(() => {
-      router.push(`/simulacao?capital=${encodeURIComponent(nextCapital)}&modo=${nextMode}`);
+      router.push(`/simulacao?capital=${encodeURIComponent(nextCapitalMzn)}&modo=${nextMode}`);
     });
+  }
+
+  function toMzn(raw: string): string {
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return raw;
+    if (unit === "MZN" || !referenceUsdMzn) return raw;
+    return String(Math.round(n * referenceUsdMzn));
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    goTo(value, mode);
+    goTo(toMzn(value), mode);
+  }
+
+  function switchUnit(next: Unit) {
+    if (next === unit) return;
+    const n = Number(value);
+    if (Number.isFinite(n) && referenceUsdMzn) {
+      setValue(next === "USD" ? (n / referenceUsdMzn).toFixed(2) : String(Math.round(n * referenceUsdMzn)));
+    }
+    setUnit(next);
   }
 
   return (
@@ -64,16 +88,39 @@ export function SimulateForm({
       <ProcessingOverlay show={isPending} message="A simular..." />
       <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-3">
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="capital">Simular com quanto capital (MZN)?</Label>
-          <Input
-            id="capital"
-            name="capital"
-            type="number"
-            step="1"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            className="w-full sm:w-48"
-          />
+          <Label htmlFor="capital">Simular com quanto capital?</Label>
+          <div className="flex gap-2">
+            <Input
+              id="capital"
+              name="capital"
+              type="number"
+              step="1"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              className="w-full sm:w-40"
+            />
+            <div className="flex overflow-hidden rounded-md border border-[var(--border)]">
+              {(["MZN", "USD"] as Unit[]).map((u) => (
+                <button
+                  key={u}
+                  type="button"
+                  onClick={() => switchUnit(u)}
+                  disabled={u === "USD" && !referenceUsdMzn}
+                  className={cn(
+                    "px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+                    unit === u
+                      ? "bg-[var(--accent-2)] text-white"
+                      : "bg-[var(--surface)] text-[var(--muted)] hover:bg-[var(--surface-2)]"
+                  )}
+                >
+                  {u}
+                </button>
+              ))}
+            </div>
+          </div>
+          {unit === "USD" && referenceUsdMzn ? (
+            <p className="text-xs text-[var(--muted)]">≈ {Math.round(Number(value) * referenceUsdMzn)} MZN ao câmbio de referência</p>
+          ) : null}
         </div>
         <Button type="submit" disabled={isPending}>
           Simular

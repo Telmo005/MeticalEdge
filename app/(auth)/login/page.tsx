@@ -20,7 +20,7 @@ export default async function LoginPage({
           </div>
           <div>
             <h1 className="text-lg font-semibold leading-tight">MeticalEdge</h1>
-            <p className="text-sm text-[var(--muted)]">Arbitragem P2P — local (MZN) e internacional</p>
+            <p className="text-sm text-[var(--muted)]">Monitor de oportunidades USDT/MZN</p>
           </div>
         </div>
 

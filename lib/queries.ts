@@ -1,17 +1,7 @@
 import "server-only";
 import { desc, eq, sql, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { settings, snapshots, opportunities, trades, alerts, capitalLedger, errorLogs, pendingOperations, intlOpportunities, intlTrades } from "@/db/schema";
-
-/** Arbitragem P2P internacional — tabelas independentes do motor USDT/MZN
- *  acima, ver lib/p2p/intl/scan.ts. */
-export async function getRecentIntlOpportunities(limit = 400) {
-  return db.select().from(intlOpportunities).orderBy(desc(intlOpportunities.collectedAt)).limit(limit);
-}
-
-export async function getRecentIntlTrades(limit = 50) {
-  return db.select().from(intlTrades).orderBy(desc(intlTrades.executedAt)).limit(limit);
-}
+import { settings, snapshots, opportunities, trades, alerts, capitalLedger, errorLogs, pendingOperations } from "@/db/schema";
 
 export async function getSettings() {
   const [row] = await db.select().from(settings).where(eq(settings.id, true)).limit(1);
