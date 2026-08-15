@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { ScrollTable } from "@/components/ui/scroll-table";
 import { formatPct } from "@/lib/utils";
+import { SUSPICIOUS_NET_PCT_THRESHOLD } from "@/lib/p2p/intl/pairs-config";
 import type { IntlOpportunity } from "@/db/schema";
 
 const PLATFORM_LABEL: Record<string, string> = {
@@ -42,8 +43,9 @@ function latestPerDirection(opportunities: IntlOpportunity[]): IntlOpportunity[]
 }
 
 function RecommendationCard({ o }: { o: IntlOpportunity }) {
+  const suspicious = Number(o.spreadNetPct) >= SUSPICIOUS_NET_PCT_THRESHOLD;
   return (
-    <Card className="border-[var(--good)]">
+    <Card className={suspicious ? "border-[var(--warning)]" : "border-[var(--good)]"}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <div className="text-xs uppercase tracking-wide text-[var(--muted)]">{o.pair} · {o.region}</div>
@@ -53,8 +55,18 @@ function RecommendationCard({ o }: { o: IntlOpportunity }) {
             <span className="font-semibold">Vender</span> em {platformLabel(o.platformSell)} a {o.bestBid}
           </div>
         </div>
-        <Badge tone="good">Lucro líquido {formatPct(o.spreadNetPct)}</Badge>
+        <Badge tone={suspicious ? "warning" : "good"}>
+          {suspicious ? "Verificar — " : "Lucro líquido "}
+          {formatPct(o.spreadNetPct)}
+        </Badge>
       </div>
+      {suspicious ? (
+        <p className="mt-2 rounded-md bg-[var(--warning-bg)] px-2 py-1.5 text-xs text-[var(--warning)]">
+          Spread invulgarmente alto (≥ {SUSPICIOUS_NET_PCT_THRESHOLD}%) — pode ser real ou o padrão clássico
+          de burla P2P (pagam acima do mercado para te convencerem a libertar a cripto antes da confirmação
+          real do pagamento). Confirma o comerciante antes de negociares.
+        </p>
+      ) : null}
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--muted)]">
         <span>Lucro estimado com {formatUsd(o.capitalUsd)}: {formatUsd(o.profitAtCapitalUsd)}</span>
         <span>Spread bruto: {formatPct(o.spreadGrossPct)}</span>

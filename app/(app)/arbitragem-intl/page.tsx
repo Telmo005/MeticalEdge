@@ -1,11 +1,14 @@
 import Link from "next/link";
-import { getRecentIntlOpportunities } from "@/lib/queries";
-import { Card } from "@/components/ui/card";
+import { getRecentIntlOpportunities, getRecentIntlTrades } from "@/lib/queries";
+import { Card, CardTitle } from "@/components/ui/card";
 import { IntlOpportunitiesTable } from "@/components/arbitragem-intl/intl-opportunities-table";
+import { LogIntlTradeForm } from "@/components/arbitragem-intl/log-intl-trade-form";
+import { IntlTradesTable } from "@/components/arbitragem-intl/intl-trades-table";
+import { logIntlTradeFormAction } from "@/lib/actions/intl-trades";
 import { TARGET_PAIRS, INACTIVE_PAIRS } from "@/lib/p2p/intl/pairs-config";
 
 export default async function ArbitragemIntlPage() {
-  const opportunitiesList = await getRecentIntlOpportunities();
+  const [opportunitiesList, tradesList] = await Promise.all([getRecentIntlOpportunities(), getRecentIntlTrades()]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -39,6 +42,22 @@ export default async function ArbitragemIntlPage() {
 
       <Card>
         <IntlOpportunitiesTable opportunities={opportunitiesList} />
+      </Card>
+
+      <Card>
+        <CardTitle>Registar ciclo executado</CardTitle>
+        <p className="mb-4 mt-1 text-sm text-[var(--muted)]">
+          Depois de comprares e venderes de acordo com uma recomendação acima, regista aqui o resultado real —
+          é a única forma de saberes se o spread estimado se confirma na prática.
+        </p>
+        <LogIntlTradeForm action={logIntlTradeFormAction} />
+      </Card>
+
+      <Card>
+        <CardTitle>Histórico de ciclos</CardTitle>
+        <div className="mt-3">
+          <IntlTradesTable trades={tradesList} />
+        </div>
       </Card>
     </div>
   );

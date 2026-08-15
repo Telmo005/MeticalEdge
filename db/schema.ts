@@ -258,6 +258,33 @@ export const intlOpportunities = meticalEdge.table("intl_opportunities", {
 export type IntlOpportunity = typeof intlOpportunities.$inferSelect;
 export type NewIntlOpportunity = typeof intlOpportunities.$inferInsert;
 
+/**
+ * Registo manual de ciclos de arbitragem internacional executados —
+ * equivalente a `trades` (USDT/MZN) acima, mas sem ledger de capital
+ * automático: aqui é só histórico para comparar lucro real vs. o estimado
+ * por `intlOpportunities`, o capital em settings.intlCapitalUsd continua a
+ * ajustar-se manualmente em /settings.
+ */
+export const intlTrades = meticalEdge.table("intl_trades", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  pair: text("pair").notNull(),
+  region: text("region").notNull(),
+  platformBuy: text("platform_buy").notNull(),
+  platformSell: text("platform_sell").notNull(),
+  buyPrice: numeric("buy_price", { precision: 18, scale: 4 }).notNull(),
+  sellPrice: numeric("sell_price", { precision: 18, scale: 4 }).notNull(),
+  capitalUsedUsd: numeric("capital_used_usd", { precision: 14, scale: 2 }).notNull(),
+  feesPaidUsd: numeric("fees_paid_usd", { precision: 14, scale: 2 }).notNull().default("0"),
+  netProfitUsd: numeric("net_profit_usd", { precision: 14, scale: 2 }).notNull(),
+  notes: text("notes"),
+  executedAt: timestamp("executed_at", { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("intl_trades_executed_at_idx").on(t.executedAt.desc()),
+]);
+export type IntlTrade = typeof intlTrades.$inferSelect;
+export type NewIntlTrade = typeof intlTrades.$inferInsert;
+
 /** Registo de qualquer erro do lado do servidor — apanhado globalmente por
  *  instrumentation.ts (onRequestError), não precisa de try/catch manual
  *  espalhado pelo código. Mesmo padrão do "payment gateway" (error_logs). */

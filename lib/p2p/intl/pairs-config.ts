@@ -30,6 +30,17 @@ export type PairConfig = {
 export const DEFAULT_COSTS_PCT = { buyPct: 0.015, sellPct: 0.02 };
 export const MIN_NET_PCT_VIABLE = 1;
 
+/**
+ * Acima disto, o spread deixa de ser "boa oportunidade" e passa a "verificar
+ * antes de confiar" — visto ao vivo em mercados finos (Bybit KES/PEN/ARS):
+ * um único anúncio de um comerciante bem cotado a pagar muito acima do
+ * mercado tanto pode ser uma oportunidade real como o padrão clássico de
+ * burla P2P (paga-te acima do mercado para te convencer a libertar a cripto
+ * antes da confirmação real do pagamento, depois estorna). Não escondemos —
+ * só deixamos de apresentar como certeza.
+ */
+export const SUSPICIOUS_NET_PCT_THRESHOLD = 15;
+
 /** Pares activos — Binance P2P e Bybit P2P testados ao vivo com anúncios
  *  reais dos dois lados em cada um (2026-08-14 e 2026-08-15). O motor de
  *  scan testa as duas direcções (Binance→Bybit e Bybit→Binance) para cada
