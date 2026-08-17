@@ -1,256 +1,241 @@
-import { getSettings, getCapitalHistory, getRecentErrorLogs } from "@/lib/queries";
-import {
-  setCapitalFormAction,
-  setMinDisplayProfitFormAction,
-  setMinNetProfitAlertFormAction,
-  updateRuleSettingsFormAction,
-  resetRuleSettingsFormAction,
-  updateAlertChannelsFormAction,
-  updateCostSettingsFormAction,
-} from "@/lib/actions/settings";
+import { getBotSettings, getCapitalHistory, getExchangeBalances, getRecentCapitalLedgerEntries, getRecentErrorLogs } from "@/lib/queries";
+import { setExchangeBalanceFormAction, setModeFormAction, updateBotSettingsFormAction } from "@/lib/actions/bot";
+import { updateAlertChannelsFormAction } from "@/lib/actions/settings";
 import { clearErrorLogsFormAction } from "@/lib/actions/error-logs";
-import { RECOMMENDED_RULE_DEFAULTS } from "@/lib/rule-defaults";
 import { Card, CardTitle } from "@/components/ui/card";
-import { Input, InputWithSuffix, Label, Select } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Input, InputWithSuffix, Label } from "@/components/ui/input";
 import { SubmitButton } from "@/components/submit-button";
 import { CapitalChart } from "@/components/capital-chart";
 import { TestNotificationButton } from "@/components/test-notification-button";
 import { ErrorLogsTable } from "@/components/error-logs-table";
-import { formatMzn } from "@/lib/utils";
+import { formatUsdt } from "@/lib/utils";
 
 export default async function SettingsPage() {
-  const [config, history, errorLogsList] = await Promise.all([
-    getSettings(),
+  const [config, exchangeBalances, chartHistory, ledgerEntries, errorLogsList] = await Promise.all([
+    getBotSettings(),
+    getExchangeBalances(),
     getCapitalHistory(50),
+    getRecentCapitalLedgerEntries(15),
     getRecentErrorLogs(30),
   ]);
-  const chartHistory = [...history]
-    .reverse()
-    .map((h) => ({ changedAt: h.changedAt, resultingBalanceMzn: Number(h.resultingBalanceMzn) }));
+  const binanceBalance = exchangeBalances.find((b) => b.exchangeId === "binance");
+  const bybitBalance = exchangeBalances.find((b) => b.exchangeId === "bybit");
 
   return (
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-lg font-semibold">Configurações</h1>
         <p className="text-sm text-[var(--muted)]">
-          Só quem gere o sistema deve mexer aqui. As regras de entrada definem quão exigente o sistema é
-          antes de te avisar — mais apertadas significa menos alertas, mas mais seguros.
+          Estes valores controlam directamente o risco do robô — o worker lê-os a cada iteração do loop.
         </p>
       </div>
 
       <Card>
-        <CardTitle>Capital disponível para a estratégia</CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle>Modo de operação</CardTitle>
+          <Badge tone={config?.mode === "live" ? "critical" : "neutral"}>{config?.mode === "live" ? "🔴 REAL" : "⚪ SIMULAÇÃO"}</Badge>
+        </div>
         <p className="mb-4 mt-1 text-sm text-[var(--muted)]">
-          O sistema só avalia oportunidades dentro deste valor. Cresce sozinho a cada operação bem-sucedida
-          que reportares em /trades — só o ajustes aqui manualmente para o valor inicial ou uma correcção.
+          Em <b>Paper</b> o robô nunca envia ordens reais, mesmo que haja chaves API configuradas — só simula com
+          dados de mercado reais. Muda para <b>Live</b> só depois de validares os resultados simulados.
         </p>
-        <form action={setCapitalFormAction} className="flex flex-wrap items-end gap-3">
+        <div className="flex flex-wrap gap-3">
+          <form action={setModeFormAction}>
+            <input type="hidden" name="mode" value="paper" />
+            <SubmitButton
+              variant={config?.mode === "paper" ? "primary" : "secondary"}
+              pendingText="A mudar..."
+              disabled={config?.mode === "paper"}
+            >
+              ⚪ Paper (simulação)
+            </SubmitButton>
+          </form>
+          <form action={setModeFormAction}>
+            <input type="hidden" name="mode" value="live" />
+            <SubmitButton
+              variant={config?.mode === "live" ? "primary" : "danger"}
+              pendingText="A mudar..."
+              disabled={config?.mode === "live"}
+              confirmMessage="Mudar para modo LIVE? O robô vai poder enviar ordens reais assim que houver uma oportunidade válida e chaves API configuradas nas duas exchanges."
+            >
+              🔴 Live (dinheiro real)
+            </SubmitButton>
+          </form>
+        </div>
+      </Card>
+
+      <Card>
+        <CardTitle>Saldo real por exchange</CardTitle>
+        <p className="mb-4 mt-1 text-sm text-[var(--muted)]">
+          Corrige aqui só depois de um depósito/levantamento fora do ciclo do robô. Com chaves API configuradas
+          nas duas exchanges, o worker sincroniza estes valores sozinho a cada iteração do loop.
+        </p>
+        <div className="flex flex-col gap-4 sm:flex-row">
+          <form action={setExchangeBalanceFormAction} className="flex flex-wrap items-end gap-3">
+            <input type="hidden" name="exchangeId" value="binance" />
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="binanceValueUsdt">Binance (USDT)</Label>
+              <Input
+                id="binanceValueUsdt"
+                name="valueUsdt"
+                type="number"
+                step="0.00000001"
+                defaultValue={binanceBalance?.totalValueUsdt ?? undefined}
+                className="w-full sm:w-48"
+              />
+            </div>
+            <SubmitButton pendingText="A actualizar...">Actualizar</SubmitButton>
+          </form>
+          <form action={setExchangeBalanceFormAction} className="flex flex-wrap items-end gap-3">
+            <input type="hidden" name="exchangeId" value="bybit" />
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="bybitValueUsdt">Bybit (USDT)</Label>
+              <Input
+                id="bybitValueUsdt"
+                name="valueUsdt"
+                type="number"
+                step="0.00000001"
+                defaultValue={bybitBalance?.totalValueUsdt ?? undefined}
+                className="w-full sm:w-48"
+              />
+            </div>
+            <SubmitButton pendingText="A actualizar...">Actualizar</SubmitButton>
+          </form>
+        </div>
+      </Card>
+
+      <Card>
+        <div className="mb-4">
+          <CardTitle>Risco e execução (avançado)</CardTitle>
+          <p className="mt-1 text-sm text-[var(--muted)]">
+            Ver secções 5, 7 e 9 do desenho original. Mudanças aqui têm efeito real no dinheiro operado.
+          </p>
+        </div>
+        <form action={updateBotSettingsFormAction} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="currentCapitalMzn">Capital (MZN)</Label>
-            <Input
-              id="currentCapitalMzn"
-              name="currentCapitalMzn"
+            <Label htmlFor="tradeSizePct">% do saldo por operação</Label>
+            <InputWithSuffix
+              id="tradeSizePct"
+              name="tradeSizePct"
+              type="number"
+              step="0.1"
+              min="0"
+              max="100"
+              suffix="%"
+              defaultValue={config?.tradeSizePct ?? undefined}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="maxTradeUsdt">Tecto por operação</Label>
+            <InputWithSuffix
+              id="maxTradeUsdt"
+              name="maxTradeUsdt"
               type="number"
               step="0.01"
-              defaultValue={config?.currentCapitalMzn ?? undefined}
-              className="w-full sm:w-48"
-            />
-          </div>
-          <SubmitButton pendingText="A actualizar...">Actualizar</SubmitButton>
-        </form>
-      </Card>
-
-      <Card>
-        <CardTitle>Lucro mínimo a considerar</CardTitle>
-        <p className="mb-4 mt-1 text-sm text-[var(--muted)]">
-          Só te mostramos, por omissão, opções que rendem pelo menos este valor em Meticais. Sobe este número
-          se quiseres ver só as oportunidades em que tens mais certeza — as restantes continuam visíveis,
-          basta tocar em &ldquo;ver todas&rdquo; onde aparecerem.
-        </p>
-        <form action={setMinDisplayProfitFormAction} className="flex flex-wrap items-end gap-3">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="minDisplayProfitMzn">Lucro mínimo (MZN)</Label>
-            <Input
-              id="minDisplayProfitMzn"
-              name="minDisplayProfitMzn"
-              type="number"
-              step="1"
               min="0"
-              defaultValue={config?.minDisplayProfitMzn ?? undefined}
-              className="w-full sm:w-48"
+              suffix="USDT"
+              defaultValue={config?.maxTradeUsdt ?? undefined}
             />
           </div>
-          <SubmitButton pendingText="A guardar...">Guardar</SubmitButton>
-        </form>
-      </Card>
-
-      <Card>
-        <CardTitle>Quando avisar-te</CardTitle>
-        <p className="mb-4 mt-1 text-sm text-[var(--muted)]">
-          Recebes um alerta sempre que a melhor forma de executar render, no mínimo, este valor de lucro
-          <b> líquido</b> — já depois das taxas da Binance e do custo de transferir dinheiro. Zero significa
-          avisar sempre que sobrar dinheiro real. Sobe o valor se estiveres a receber alertas de mais para
-          operações pequenas demais para valerem a interrupção.
-        </p>
-        <form action={setMinNetProfitAlertFormAction} className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="minNetProfitAlertMzn">Lucro líquido mínimo para avisar</Label>
+            <Label htmlFor="minProfitPct">Lucro mínimo exigido</Label>
             <InputWithSuffix
-              id="minNetProfitAlertMzn"
-              name="minNetProfitAlertMzn"
+              id="minProfitPct"
+              name="minProfitPct"
               type="number"
-              step="1"
+              step="0.01"
               min="0"
-              suffix="MZN"
-              defaultValue={config?.minNetProfitAlertMzn ?? undefined}
-              className="w-full sm:w-56"
+              suffix="%"
+              defaultValue={config?.minProfitPct ?? undefined}
             />
-          </div>
-          <SubmitButton pendingText="A guardar...">Guardar</SubmitButton>
-        </form>
-        <p className="mt-3 text-xs text-[var(--muted)]">
-          Isto é diferente de &ldquo;Lucro mínimo a considerar&rdquo; acima: esse filtra o que aparece nas
-          listas dentro da app, este decide se o telemóvel toca.
-        </p>
-      </Card>
-
-      <Card>
-        <CardTitle>Custo real de mover dinheiro</CardTitle>
-        <p className="mb-4 mt-1 text-sm text-[var(--muted)]">
-          Cada ordem P2P envolve uma transferência de Meticais, e isso custa dinheiro. Até aqui o cálculo de
-          lucro só descontava a taxa da Binance e tratava as transferências como grátis — o que tornava todos
-          os lucros mostrados optimistas. Numa operação de 5.000 MZN a diferença ronda os 30 MZN, muitas
-          vezes mais do que a margem inteira.
-        </p>
-        <form action={updateCostSettingsFormAction} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="costRail">Como pagas e recebes</Label>
-            <Select id="costRail" name="costRail" defaultValue={config?.costRail ?? "mpesa"}>
-              <option value="mpesa">M-Pesa</option>
-              <option value="emola">e-Mola</option>
-              <option value="nenhum">Transferência sem custo (banco próprio, saldo interno)</option>
-            </Select>
+            <p className="text-xs text-[var(--muted)]">MIN_PROFIT_PERCENTAGE (secção 7) — antes da margem de segurança.</p>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="transfersPerOrder">Transferências por ordem</Label>
+            <Label htmlFor="minSafetyMarginPct">Margem de segurança adicional</Label>
             <InputWithSuffix
-              id="transfersPerOrder"
-              name="transfersPerOrder"
+              id="minSafetyMarginPct"
+              name="minSafetyMarginPct"
               type="number"
-              min="1"
-              max="10"
-              step="1"
-              suffix="envios"
-              defaultValue={config?.transfersPerOrder ?? 1}
+              step="0.01"
+              min="0"
+              suffix="%"
+              defaultValue={config?.minSafetyMarginPct ?? undefined}
             />
             <p className="text-xs text-[var(--muted)]">
-              Alguns comerciantes pedem o valor repartido em vários envios — e cada envio paga a sua taxa de
-              escalão.
+              Só executa se lucro mínimo + margem for superado — absorve slippage e atraso entre avaliação e execução.
             </p>
           </div>
-          <div className="col-span-1 flex items-start gap-2 sm:col-span-2">
-            <input
-              id="includeCashOut"
-              name="includeCashOut"
-              type="checkbox"
-              defaultChecked={config?.includeCashOut}
-              className="mt-0.5 h-4 w-4"
-            />
-            <Label htmlFor="includeCashOut" className="normal-case">
-              Contar também o levantamento no fim de cada operação. Deixa desligado se reinvestes o saldo em
-              vez de o levantares — que é o caso normal de quem opera em ciclo.
-            </Label>
-          </div>
-          <div className="col-span-1 sm:col-span-2">
-            <SubmitButton pendingText="A guardar...">Guardar custos</SubmitButton>
-          </div>
-        </form>
-      </Card>
-
-      <Card>
-        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <CardTitle>Regras de entrada (avançado)</CardTitle>
-            <p className="mt-1 text-sm text-[var(--muted)]">
-              Um alerta só é enviado quando TODAS estas condições se cumprem — ver Secção 10 do relatório
-              original. O número entre parêntesis é o valor recomendado.
-            </p>
-          </div>
-        </div>
-        <form action={updateRuleSettingsFormAction} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="minGrossSpreadPct">
-              Spread bruto mínimo (%) <span className="normal-case text-[var(--muted)]">(recomendado {RECOMMENDED_RULE_DEFAULTS.minGrossSpreadPct})</span>
-            </Label>
-            <Input
-              id="minGrossSpreadPct"
-              name="minGrossSpreadPct"
+            <Label htmlFor="maxExecutionTimeMs">Tempo máximo de execução</Label>
+            <InputWithSuffix
+              id="maxExecutionTimeMs"
+              name="maxExecutionTimeMs"
               type="number"
-              step="0.01"
-              defaultValue={config?.minGrossSpreadPct ?? undefined}
+              step="1000"
+              min="1000"
+              suffix="ms"
+              defaultValue={config?.maxExecutionTimeMs ?? undefined}
             />
+            <p className="text-xs text-[var(--muted)]">Prazo para as duas pernas confirmarem antes do Recovery Engine agir (secção 10).</p>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="minNetPctAlert">
-              Lucro líquido mínimo p/ alertar (%) <span className="normal-case text-[var(--muted)]">(recomendado {RECOMMENDED_RULE_DEFAULTS.minNetPctAlert})</span>
-            </Label>
-            <Input
-              id="minNetPctAlert"
-              name="minNetPctAlert"
-              type="number"
-              step="0.01"
-              defaultValue={config?.minNetPctAlert ?? undefined}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="minCounterpartyFinishRate">
-              Taxa de conclusão mínima da contraparte{" "}
-              <span className="normal-case text-[var(--muted)]">(recomendado {RECOMMENDED_RULE_DEFAULTS.minCounterpartyFinishRate})</span>
-            </Label>
-            <Input
-              id="minCounterpartyFinishRate"
-              name="minCounterpartyFinishRate"
+            <Label htmlFor="dailyLossLimitUsdt">Limite de perda diária</Label>
+            <InputWithSuffix
+              id="dailyLossLimitUsdt"
+              name="dailyLossLimitUsdt"
               type="number"
               step="0.01"
               min="0"
-              max="1"
-              defaultValue={config?.minCounterpartyFinishRate ?? undefined}
+              suffix="USDT"
+              defaultValue={config?.dailyLossLimitUsdt ?? undefined}
+            />
+            <p className="text-xs text-[var(--muted)]">Se a perda do dia atingir isto, o robô pára-se sozinho.</p>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="maxTradeLossUsdt">Perda máxima por operação</Label>
+            <InputWithSuffix
+              id="maxTradeLossUsdt"
+              name="maxTradeLossUsdt"
+              type="number"
+              step="0.01"
+              min="0"
+              suffix="USDT"
+              defaultValue={config?.maxTradeLossUsdt ?? undefined}
+            />
+            <p className="text-xs text-[var(--muted)]">Independente do limite diário — uma única operação muito má já pára o robô sozinha.</p>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="maxConsecutiveErrors">Máx. erros consecutivos</Label>
+            <Input
+              id="maxConsecutiveErrors"
+              name="maxConsecutiveErrors"
+              type="number"
+              min="1"
+              defaultValue={config?.maxConsecutiveErrors ?? undefined}
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="minCounterpartyMonthlyOrders">
-              Ordens/mês mínimas da contraparte{" "}
-              <span className="normal-case text-[var(--muted)]">(recomendado {RECOMMENDED_RULE_DEFAULTS.minCounterpartyMonthlyOrders})</span>
-            </Label>
+            <Label htmlFor="maxConsecutiveLosses">Máx. perdas seguidas</Label>
             <Input
-              id="minCounterpartyMonthlyOrders"
-              name="minCounterpartyMonthlyOrders"
+              id="maxConsecutiveLosses"
+              name="maxConsecutiveLosses"
               type="number"
-              defaultValue={config?.minCounterpartyMonthlyOrders ?? undefined}
+              min="1"
+              defaultValue={config?.maxConsecutiveLosses ?? undefined}
             />
+            <p className="text-xs text-[var(--muted)]">Trades reais sem lucro seguidos — diferente de erros técnicos, conta operações que &ldquo;correram bem&rdquo; mas deram prejuízo.</p>
           </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="maxOrdersPerLeg">
-              Máx. ordens por perna <span className="normal-case text-[var(--muted)]">(recomendado {RECOMMENDED_RULE_DEFAULTS.maxOrdersPerLeg})</span>
-            </Label>
+          <div className="col-span-1 flex flex-col gap-1.5 sm:col-span-2">
+            <Label htmlFor="watchedPairs">Pares vigiados (Binance + Bybit)</Label>
             <Input
-              id="maxOrdersPerLeg"
-              name="maxOrdersPerLeg"
-              type="number"
-              defaultValue={config?.maxOrdersPerLeg ?? undefined}
+              id="watchedPairs"
+              name="watchedPairs"
+              type="text"
+              defaultValue={config?.watchedPairs?.join(", ") ?? ""}
+              placeholder="BTCUSDT, ETHUSDT"
             />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="alertCooldownMinutes">
-              Intervalo mínimo entre alertas (min){" "}
-              <span className="normal-case text-[var(--muted)]">(recomendado {RECOMMENDED_RULE_DEFAULTS.alertCooldownMinutes})</span>
-            </Label>
-            <Input
-              id="alertCooldownMinutes"
-              name="alertCooldownMinutes"
-              type="number"
-              defaultValue={config?.alertCooldownMinutes ?? undefined}
-            />
+            <p className="text-xs text-[var(--muted)]">Separados por vírgula — o motor compara as duas exchanges em cada par, nas duas direcções (secção 18).</p>
           </div>
           <div className="col-span-1 flex items-center gap-2 sm:col-span-2">
             <input
@@ -261,19 +246,11 @@ export default async function SettingsPage() {
               className="h-4 w-4"
             />
             <Label htmlFor="scanningEnabled" className="normal-case">
-              Varredura activa (desliga para pausar o monitoramento sem apagar dados)
+              Varredura activa (desliga para pausar sem apagar dados)
             </Label>
           </div>
-          <div className="col-span-1 flex flex-wrap gap-3 sm:col-span-2">
-            <SubmitButton pendingText="A guardar...">Guardar regras</SubmitButton>
-            <SubmitButton
-              variant="secondary"
-              formAction={resetRuleSettingsFormAction}
-              pendingText="A repor..."
-              confirmMessage="Repor as 6 regras de entrada para os valores recomendados? Isto substitui o que tens configurado agora."
-            >
-              Repor valores recomendados
-            </SubmitButton>
+          <div className="col-span-1 sm:col-span-2">
+            <SubmitButton pendingText="A guardar...">Guardar</SubmitButton>
           </div>
         </form>
       </Card>
@@ -281,9 +258,8 @@ export default async function SettingsPage() {
       <Card>
         <CardTitle>Alertas — push e SMS</CardTitle>
         <p className="mb-4 mt-1 text-sm text-[var(--muted)]">
-          O push é sempre enviado. O SMS duplica o alerta — útil se o telemóvel não estiver com a app do
-          gateway aberta. Usa &ldquo;Testar notificações&rdquo; para confirmar que ambos chegam, sem esperar
-          por uma oportunidade real.
+          O push é sempre enviado. O SMS duplica o alerta — útil se o telemóvel não estiver com a app do gateway
+          aberta.
         </p>
         <form action={updateAlertChannelsFormAction} className="flex flex-col gap-4">
           <div className="flex items-center gap-2">
@@ -320,19 +296,19 @@ export default async function SettingsPage() {
       </Card>
 
       <Card>
-        <CardTitle>Evolução do capital</CardTitle>
+        <CardTitle>Evolução do saldo</CardTitle>
         <div className="mt-3">
           <CapitalChart history={chartHistory} />
         </div>
         <ul className="mt-4 flex flex-col gap-2 text-sm">
-          {history.slice(0, 15).map((h) => (
+          {ledgerEntries.map((h) => (
             <li key={h.id} className="flex items-center justify-between border-b border-[var(--border)] pb-2">
               <span className="text-[var(--muted)]">
-                {new Date(h.changedAt).toLocaleString("pt-PT")} — {h.reason}
+                {new Date(h.changedAt).toLocaleString("pt-PT")} — {h.exchangeId} — {h.reason}
               </span>
               <span className="tabular">
-                {Number(h.deltaMzn) >= 0 ? "+" : ""}
-                {formatMzn(h.deltaMzn)} → {formatMzn(h.resultingBalanceMzn)}
+                {Number(h.deltaUsdt) >= 0 ? "+" : ""}
+                {formatUsdt(h.deltaUsdt)} → {formatUsdt(h.resultingBalanceUsdt)}
               </span>
             </li>
           ))}
@@ -344,8 +320,8 @@ export default async function SettingsPage() {
           <div>
             <CardTitle>Erros recentes</CardTitle>
             <p className="mt-1 text-sm text-[var(--muted)]">
-              Qualquer erro do lado do servidor (varredura falhada, base de dados indisponível, etc.) fica
-              registado aqui automaticamente e dispara um push na hora.
+              Qualquer erro do lado do servidor ou do worker fica registado aqui automaticamente e dispara um
+              push na hora.
             </p>
           </div>
           {errorLogsList.length > 0 ? (

@@ -7,6 +7,26 @@ import { ProcessingOverlay } from "@/components/ui/processing-overlay";
 import { cn } from "@/lib/utils";
 import type { Alert } from "@/db/schema";
 
+/** Severidade derivada de `kind` (sem alterar o schema) — para o painel
+ *  destacar visualmente o que precisa de atenção (erro/kill switch) do
+ *  que é só informativo. */
+const SEVERITY: Record<Alert["kind"], "critical" | "warning" | "info"> = {
+  erro: "critical",
+  limite_perda: "critical",
+  bot_parado: "critical",
+  perda: "warning",
+  oportunidade_importante: "warning",
+  execucao: "info",
+  lucro: "info",
+  saldo_atualizado: "info",
+  teste: "info",
+};
+const SEVERITY_BORDER: Record<"critical" | "warning" | "info", string> = {
+  critical: "border-l-[var(--critical)]",
+  warning: "border-l-[var(--warning)]",
+  info: "border-l-transparent",
+};
+
 function timeAgo(date: Date): string {
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
   if (seconds < 60) return `${seconds}s`;
@@ -20,7 +40,7 @@ function timeAgo(date: Date): string {
 /** Sino de notificações dentro da app — duplica o alerta push num registo
  *  persistente que fica visível mesmo que o telemóvel não tenha recebido o
  *  push (app fechada, sem dados, gateway em baixo). O corpo guardado é a
- *  simulação completa (ver lib/p2p/notify-format.ts), por isso cada item
+ *  simulação/resultado completo do alerta, por isso cada item
  *  começa colapsado (só a primeira linha) e expande ao tocar — mostrar tudo
  *  logo de início tornaria a lista enorme. Usado na sidebar e na barra
  *  superior mobile. */
@@ -92,13 +112,15 @@ export function NotificationBell({
                 alerts.map((a) => {
                   const isExpanded = expandedId === a.id;
                   const firstLine = a.body.split("\n")[0];
+                  const severity = SEVERITY[a.kind] ?? "info";
                   return (
                     <button
                       key={a.id}
                       type="button"
                       onClick={() => handleToggle(a.id, a.readAt)}
                       className={cn(
-                        "flex w-full flex-col gap-0.5 border-b border-[var(--border)] px-3 py-2.5 text-left last:border-b-0 hover:bg-[var(--surface-2)]",
+                        "flex w-full flex-col gap-0.5 border-b border-l-4 border-[var(--border)] px-3 py-2.5 text-left last:border-b-0 hover:bg-[var(--surface-2)]",
+                        SEVERITY_BORDER[severity],
                         !a.readAt && "bg-[var(--accent-2)]/5"
                       )}
                     >

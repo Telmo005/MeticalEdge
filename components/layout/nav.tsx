@@ -2,25 +2,20 @@
 
 import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, BookOpen, Calculator, ListChecks, Hourglass, Settings, Users, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, Target, ListChecks, Settings, type LucideIcon } from "lucide-react";
 import { ProcessingOverlay } from "@/components/ui/processing-overlay";
 import { cn } from "@/lib/utils";
 
 export const NAV_ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/", label: "Painel", icon: LayoutDashboard },
-  { href: "/operacoes", label: "Em curso", icon: Hourglass },
-  { href: "/livro", label: "Livro", icon: BookOpen },
-  { href: "/simulacao", label: "Simulação", icon: Calculator },
-  { href: "/comerciantes", label: "Comerc.", icon: Users },
-  { href: "/trades", label: "Histórico", icon: ListChecks },
+  { href: "/oportunidades", label: "Oportuni.", icon: Target },
+  { href: "/operacoes", label: "Histórico", icon: ListChecks },
   { href: "/settings", label: "Config.", icon: Settings },
 ];
 
 const FULL_LABEL: Record<string, string> = {
   "Config.": "Configurações",
-  Livro: "Livro de ofertas",
-  "Comerc.": "Comerciantes",
-  "Em curso": "Operações em curso",
+  "Oportuni.": "Oportunidades",
   Histórico: "Histórico de operações",
 };
 

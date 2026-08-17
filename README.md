@@ -1,49 +1,64 @@
 # MeticalEdge
 
-Monitor autónomo do mercado USDT/MZN no Binance P2P. Varre o livro
-periodicamente, avalia a estratégia de **captura de spread cruzado** (ver
-relatório original) contra o capital que configurares, e envia um alerta
-push para o teu telemóvel quando encontra uma oportunidade real que cumpre
-todas as regras de entrada. Cada operação que executares na Binance é
-reportada de volta ao sistema, o que faz o capital configurado evoluir
-sozinho.
+Robô de arbitragem cross-exchange entre Binance e Bybit (spot). Compara os
+livros de ordens das duas exchanges para os pares vigiados, calcula o
+resultado líquido real (taxas + slippage + margem de segurança) e só
+executa — comprar numa, vender na outra, quase em simultâneo — quando esse
+resultado é mesmo positivo. Se não houver oportunidade suficientemente boa,
+não faz nada — nunca força uma operação só para gerar actividade.
 
-Não é um bot que negoceia por ti — a Binance não expõe uma API pública para
-tomar anúncios de P2P automaticamente. É um sistema de vigilância e registo:
-ele decide *quando* vale a pena olhar, tu executas manualmente na app da
-Binance, e depois confirmas aqui o que aconteceu.
+O capital fica sempre **pré-distribuído** nas duas exchanges (USDT para
+comprar numa, o activo já reservado para vender na outra) e **nunca é
+transferido** entre elas durante a arbitragem — evita risco de blockchain,
+tempo de confirmação e taxas de retirada. Depois de várias operações os
+saldos das duas podem ficar desequilibrados; o robô só informa
+("rebalanceamento recomendado"), nunca transfere sozinho.
+
+Não é um simulador: com chaves API configuradas nas duas exchanges,
+liga-se às contas reais, verifica os saldos reais, executa ordens reais e
+regista o resultado real. Sem chaves numa das duas, corre em modo
+só-leitura — encontra e regista oportunidades reais, mas nunca executa
+nada.
 
 ## Arquitectura
 
-- **Next.js 16** (App Router, TypeScript) — mesmo stack do Duelo.
-- **Supabase** — schema Postgres próprio `metical_edge` dentro de um
-  projecto Supabase já existente (reaproveitado, não um projecto novo).
-  Ver `supabase/migrations/0001_init.sql` para o porquê de não usar RLS
-  policies/PostgREST aqui: único utilizador de confiança, tudo passa pelo
-  servidor Next.js via ligação directa Postgres (Drizzle).
-- **Supabase Auth** — só para o login (mono-utilizador); os dados da app
-  não passam pelo PostgREST.
-- **Cron externo** (cron-job.org, mesmo padrão do Duelo) chama
-  `/api/cron/scan` a cada N minutos, autenticado por `CRON_SECRET`.
-- **Alertas** — via o gateway de mensagens partilhado (o mesmo
-  `payment gateway` que o Duelo usa) — push Android real para o teu
-  telemóvel via celular-gateway. Ver `lib/messaging-client.ts`.
-- **Motor de análise** (`lib/p2p/`) — porte directo para TypeScript do
-  `p2p_mzn_analyzer` em Python (a ferramenta original que gerou o
-  relatório): mesmo cliente da API pública do Binance P2P, mesma simulação
-  de execução com profundidade real do livro, mesmos custos/taxas.
+Dois processos, uma base de dados Postgres partilhada (Supabase, schema
+`metical_edge`):
+
+- **App Next.js (dashboard)** — painel, oportunidades, histórico e
+  configurações. Só lê/escreve na base de dados (saldos, limites, kill
+  switch); nunca fala directamente com as exchanges.
+- **Worker (`worker/index.ts`)** — processo Node sempre-ligado, corrido à
+  parte (não em serverless): a cada poucos segundos lê `bot_settings`,
+  sincroniza saldos/inventário das duas exchanges, compara os pares
+  vigiados nas duas direcções (`lib/arbitrage/scanner.ts`,
+  `lib/arbitrage/opportunity-engine.ts`) contra livros de ordens reais, e —
+  só se passarem todos os filtros de segurança (`lib/arbitrage/safety.ts`)
+  e houver chaves API nas duas exchanges — executa
+  (`lib/execution/executor.ts`, com recuperação de perna incompleta em
+  `lib/execution/recovery.ts`). Corre fora do Vercel de propósito: precisa
+  de um loop contínuo (não cron a cada minuto) e beneficia de um IP fixo
+  para restringir as API keys.
+
+Cada exchange tem o seu próprio adaptador (`lib/exchange/binance.ts`,
+`lib/exchange/bybit.ts`) implementando a interface comum
+`ExchangeAdapter` (`lib/exchange/types.ts`) — arquitectura preparada para
+adicionar uma terceira exchange mais tarde, sem tocar no motor de
+oportunidades nem no executor.
+
+Módulos partilhados pelos dois processos vivem em `lib/` e `db/`. Alguns
+ficheiros usam `import "server-only"` (protecção do Next.js contra
+importar código de servidor em componentes cliente) — esses não podem ser
+importados pelo worker; onde o worker precisa da mesma lógica, importa a
+versão "core" sem esse guard (`lib/errorLog.core.ts`, `lib/queries.core.ts`).
 
 ## Setup
 
 ### 1. Base de dados (Supabase)
 
-Este sistema reaproveita um projecto Supabase que já tenhas. No **SQL
-Editor** desse projecto, corre o conteúdo de
-`supabase/migrations/0001_init.sql` uma vez — cria o schema `metical_edge`
-e todas as tabelas, sem tocar em nada que já exista no projecto (schema
-isolado, sem GRANTs para `anon`/`authenticated`).
-
-Depois preenche `.env` (copia de `.env.example`):
+Reaproveita um projecto Supabase existente. As migrações em
+`supabase/migrations/` criam e mantêm o schema `metical_edge` — corre
+`npm run db:migrate` (ou aplica manualmente no SQL Editor se preferires).
 
 ```
 NEXT_PUBLIC_SUPABASE_URL=      # Project Settings -> API -> Project URL
@@ -54,71 +69,87 @@ DATABASE_URL=                  # Project Settings -> Database -> Connection stri
 
 ### 2. Conta de login
 
-Não há página de registo (é mono-utilizador). No dashboard do Supabase:
-**Authentication -> Users -> Add user** — cria o teu email/password ali.
-É essa conta que usas em `/login`.
+Mono-utilizador, sem página de registo. No dashboard do Supabase:
+**Authentication -> Users -> Add user**.
 
-### 3. Alertas (gateway de mensagens)
+### 3. Chaves das exchanges
 
-`.env` já vem com `MESSAGING_BASE_URL` e `MESSAGING_API_KEY` preenchidos a
-partir do `payment gateway` local (copiados do `PUBLIC_BASE_URL` e
-`CRON_SECRET` desse projecto — ver `docs/ENDPOINTS.md` lá: os endpoints de
-mensagens autenticam com o próprio `CRON_SECRET` do gateway, não uma chave
-por-app). Em produção, aponta `MESSAGING_BASE_URL` para o domínio publicado
-do gateway em vez de `localhost`.
+**Binance** (Account -> API Management -> Create API) e **Bybit**
+(API Management -> Create New Key) — nas duas, activa **apenas** leitura +
+trading spot, **nunca** saques/transferências. Sem restrição de IP, isso já
+limita bem o estrago de uma key comprometida; com IP fixo (worker num VPS),
+podes e deves restringir.
 
-### 4. Rodar localmente
+```
+BINANCE_API_KEY=
+BINANCE_API_SECRET=
+BYBIT_API_KEY=
+BYBIT_API_SECRET=
+```
+
+Sem chaves numa das duas exchanges, o worker corre em modo só-leitura
+(encontra e regista oportunidades reais, nunca executa).
+
+### 4. Alertas (gateway de mensagens)
+
+`MESSAGING_BASE_URL` e `MESSAGING_API_KEY` — push (e SMS opcional) para o
+teu telemóvel. Ver `lib/messaging-client.ts`.
+
+### 5. Rodar localmente
 
 ```bash
 npm install
-npm run dev
+npm run dev      # dashboard em http://localhost:3000
+npm run worker   # worker (loop de scan/execução), processo à parte
 ```
 
-Para testar a varredura sem esperar pelo cron:
+### 6. Deploy
 
-```bash
-curl -H "Authorization: Bearer $(grep ^CRON_SECRET .env | cut -d= -f2)" http://localhost:3000/api/cron/scan
-```
-
-### 5. Deploy (Vercel, como o Duelo)
-
-1. `vercel` / importar o repo no dashboard da Vercel.
-2. Copiar todas as variáveis de `.env` para o projecto na Vercel
-   (Settings -> Environment Variables) — usar a URL de produção do gateway
-   de mensagens em `MESSAGING_BASE_URL`, não `localhost`.
-3. Não há cron nativo configurado (`vercel.json` vazio, mesmo padrão do
-   Duelo) — agendar em **cron-job.org**:
-   - URL: `https://<domínio-do-deploy>/api/cron/scan`
-   - Header: `Authorization: Bearer <CRON_SECRET>`
-   - Intervalo: **1 minuto** (o plano gratuito do cron-job.org permite). A
-     janela de spread cruzado dura minutos, não horas — quanto mais espaçada
-     a varredura, maior a hipótese de a perder por completo.
-   - Cada varredura só grava um novo snapshot/oportunidade e só dispara um
-     alerta novo depois do `alert_cooldown_minutes` configurado em
-     `/settings` (por omissão 20 min) — correr o cron a cada minuto não
-     satura de alertas, só reduz o atraso até detectar uma janela nova.
+- **Dashboard**: Vercel, como sempre — copiar as variáveis de `.env` para
+  o projecto.
+- **Worker**: processo Node sempre-ligado num VPS pequeno (não Vercel —
+  precisa de correr continuamente, não em serverless). `git clone` +
+  `npm ci` + `.env` com as mesmas variáveis + as quatro chaves API +
+  `npm run worker` sob um supervisor (`pm2` ou um serviço `systemd`) para
+  reiniciar sozinho se cair.
+- `/api/cron/scan` deixou de fazer varredura — passou a heartbeat-check:
+  confirma que o worker continua a escrever em `bot_heartbeats` e avisa se
+  parar de responder. Continua a precisar de um scheduler externo
+  (cron-job.org, a cada minuto) apontado para lá com
+  `Authorization: Bearer <CRON_SECRET>`.
 
 ## Como usar
 
-1. Em **/settings**, define o capital inicial disponível para a estratégia
-   e ajusta as regras de entrada se quiseres (os valores por omissão
-   reproduzem exactamente a Secção 10 do relatório original).
-2. O cron varre o mercado sozinho. Quando uma oportunidade cumpre todas as
-   regras, chega um push ao telemóvel e fica registada em **/** (painel).
-3. Executas a operação manualmente na app da Binance.
-4. Voltas a **/trades/new** (a partir do link na oportunidade, ou
-   directamente) e registas o que aconteceu de facto — preço real, USDT
-   negociado, lucro líquido real. O capital em `/settings` actualiza-se
-   sozinho a partir daqui, e as próximas varreduras já usam o novo valor.
+1. Cria as API keys na Binance e na Bybit (passo 3 acima) e deposita o
+   capital real com que vais começar: USDT na Binance (para comprar) e o
+   valor equivalente já convertido no activo na Bybit (para vender) —
+   tipicamente ~10 USDT em cada.
+2. Em **/** (painel), confirma os dois saldos iniciais se ainda não
+   tiveres chaves ligadas — com chaves, o worker sincroniza-os sozinho.
+3. Arranca `npm run worker`. Ele compara continuamente as duas exchanges
+   em cada par vigiado, nas duas direcções, e só executa quando o
+   resultado líquido supera a margem de segurança configurada em
+   **/settings**.
+4. Acompanha em **/oportunidades** (ranking + motivos de rejeição) e
+   **/operacoes** (histórico real de execuções, com desempenho por rota e
+   por par).
+5. **PARAR BOT** no painel escreve o kill switch na base de dados — o
+   worker lê isso a cada iteração do loop (poucos segundos) e pára de
+   abrir novas operações.
 
-## Limitações conhecidas (herdadas do relatório original)
+## Protecções de capital
 
-- A margem desta estratégia é fina (tipicamente 0,2%–0,5% líquido por
-  operação) e depende de execução rápida — o alerta chega, mas a janela
-  pode fechar antes de executares as duas pernas.
-- O capital mínimo real observado é ~2.000 MZN — abaixo disso os limites
-  mínimos dos anúncios normalmente bloqueiam a operação (ver regras de
-  entrada em `/settings`).
-- A taxa "taker" exacta da Binance por ordem não é pública sem login —
-  `lib/p2p/fees.ts` usa um intervalo conservador/médio/optimista, igual ao
-  relatório original.
+- Tamanho por operação = `trade_size_pct` do saldo USDT livre da exchange
+  compradora nesse ciclo, capado por `max_trade_usdt` — nunca o saldo
+  inteiro de uma vez.
+- Nunca executa sem reconfirmar preço, liquidez, inventário e margem em
+  cima de dados frescos, imediatamente antes das ordens
+  (`lib/execution/executor.ts`).
+- As duas pernas são disparadas quase em simultâneo. Se uma não preencher
+  por completo dentro de `max_execution_time_ms`, o Recovery Engine tenta
+  **uma única vez** completá-la — sem sequências infinitas, sem martingale.
+  Se mesmo assim ficar incompleta, o ciclo é registado como
+  `partial_recovered`/`failed` com o motivo exacto, e o desequilíbrio entre
+  as duas exchanges fica visível no painel (Rebalancing Monitor).
+- Limite de perda diária e contador de erros consecutivos activam o kill
+  switch sozinhos (`bot_settings.killSwitchEngaged`) e avisam por push.

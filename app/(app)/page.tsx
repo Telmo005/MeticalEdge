@@ -1,29 +1,46 @@
 import Link from "next/link";
-import { CheckCircle2, XCircle, Info } from "lucide-react";
+import { Info } from "lucide-react";
 import {
-  getSettings,
-  getLatestSnapshot,
-  getRecentOpportunities,
+  getBotSettings,
+  getExchangeBalances,
+  getExchangeHealth,
+  getHeartbeat,
+  getMaxDrawdown,
+  getPaperBalances,
+  getRecentOpportunitiesSummary,
+  getRecentTrades,
+  getSpreadHistory,
+  getTodayNetProfitUsdt,
   getTradeStats,
-  getPendingOperations,
-  getCapitalPosition,
+  getOpportunityCounts,
+  getCapitalHistory,
 } from "@/lib/queries";
-import { costPreferencesFrom } from "@/lib/cost-prefs";
-import { findBestAdPairs } from "@/lib/p2p/optimizer";
-import { getTimingInsight } from "@/lib/p2p/patterns";
-import { TimingCard } from "@/components/dashboard/timing-card";
 import { Card, CardLabel, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { RefreshButton } from "@/components/refresh-button";
-import { ExecutionPlan } from "@/components/execution-plan";
-import { OpportunitiesHistoryTable } from "@/components/dashboard/opportunities-history-table";
-import { MarketIntelligenceCard } from "@/components/dashboard/market-intelligence-card";
-import { PriceHistoryChart } from "@/components/dashboard/price-history-chart";
-import { getPriceExtremes, getReferenceDivergenceSignal, getPriceHistory } from "@/lib/p2p/price-intelligence";
-import { analyzeTopAdLifecycle } from "@/lib/p2p/ad-lifecycle";
-import { OnboardingWelcome } from "@/components/onboarding-welcome";
-import { formatMzn, formatPct, formatUsdt } from "@/lib/utils";
+import { MoneyStat } from "@/components/ui/stat";
+import { Input, Label } from "@/components/ui/input";
+import { SubmitButton } from "@/components/submit-button";
+import { CapitalChart } from "@/components/capital-chart";
+import { WalletBreakdown } from "@/components/dashboard/wallet-breakdown";
+import { ExchangeHealthCard } from "@/components/dashboard/exchange-health-card";
+import { SpreadHistoryChart } from "@/components/dashboard/spread-history-chart";
+import { setBothExchangeBalancesFormAction, engageKillSwitchAction, resumeBotAction, resetPaperBalancesAction } from "@/lib/actions/bot";
+import { formatUsdt, formatPct } from "@/lib/utils";
+import { EXCHANGE_IDS } from "@/lib/exchange/registry";
+
+const STATUS_LABEL: Record<string, string> = {
+  scanning: "PROCURANDO OPORTUNIDADES",
+  opportunity_found: "OPORTUNIDADE ENCONTRADA",
+  validating: "A VALIDAR",
+  executing: "A EXECUTAR",
+  partially_filled: "PARCIALMENTE PREENCHIDA",
+  completed: "CONCLUÍDA",
+  recovery: "EM RECUPERAÇÃO",
+  paused: "PARADO",
+  error: "ERRO",
+};
+
+const EXCHANGE_LABEL: Record<string, string> = { binance: "Binance", bybit: "Bybit" };
 
 function timeAgo(date: Date): string {
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
@@ -35,335 +52,339 @@ function timeAgo(date: Date): string {
 }
 
 export default async function DashboardPage() {
-  const config = await getSettings();
-  if (Number(config?.currentCapitalMzn ?? 0) === 0) {
-    return <OnboardingWelcome />;
+  const settings = await getBotSettings();
+  const isPaper = settings.mode === "paper";
+  const initialBalance = Number(settings?.initialBalanceUsdt ?? 0);
+
+  // Em modo live sem nenhum depósito real ainda, pede o onboarding antes de
+  // mostrar o resto — em modo paper não bloqueia nada, já que não precisa
+  // de capital real nenhum para simular.
+  if (!isPaper && initialBalance === 0) {
+    return (
+      <div className="flex flex-col gap-6">
+        <div>
+          <h1 className="text-lg font-semibold">Bem-vindo</h1>
+          <p className="text-sm text-[var(--muted)]">
+            Regista o capital pré-distribuído nas duas exchanges (secção 1): USDT na Binance para comprar, e o
+            valor em USDT do activo já reservado na Bybit para vender.
+          </p>
+        </div>
+        <Card>
+          <CardTitle>Capital inicial</CardTitle>
+          <p className="mb-4 mt-1 text-sm text-[var(--muted)]">
+            Sem chaves API configuradas, estes valores só servem para o motor calcular o tamanho das operações a
+            avaliar — nenhuma ordem real é executada até haver chaves nas duas exchanges. Com chaves, o worker
+            passa a sincronizar os saldos reais sozinho.
+          </p>
+          <form action={setBothExchangeBalancesFormAction} className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="binanceUsdt">Binance — USDT para comprar</Label>
+              <Input id="binanceUsdt" name="binanceUsdt" type="number" step="0.01" min="0" defaultValue={10} className="w-full sm:w-48" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="bybitUsdt">Bybit — valor do activo para vender</Label>
+              <Input id="bybitUsdt" name="bybitUsdt" type="number" step="0.01" min="0" defaultValue={10} className="w-full sm:w-48" />
+            </div>
+            <SubmitButton pendingText="A guardar...">Confirmar capital</SubmitButton>
+          </form>
+          <p className="mt-4 text-xs text-[var(--muted)]">
+            Preferes testar sem capital real primeiro? Muda para modo Paper em <Link href="/settings" className="text-[var(--accent-2)] hover:underline">/settings</Link>.
+          </p>
+        </Card>
+      </div>
+    );
   }
 
-  const [snapshot, opportunitiesList, stats, pendingOps, capital] = await Promise.all([
-    getLatestSnapshot(),
-    getRecentOpportunities(200),
-    getTradeStats(),
-    getPendingOperations(),
-    getCapitalPosition(),
+  const [
+    heartbeat,
+    opportunities,
+    trades,
+    stats,
+    counts24h,
+    capitalHistory,
+    exchangeBalances,
+    paperBalances,
+    exchangeHealthRows,
+    todayNet,
+    spreadSeries,
+  ] = await Promise.all([
+    getHeartbeat(),
+    getRecentOpportunitiesSummary(20),
+    getRecentTrades(10, isPaper),
+    getTradeStats(isPaper),
+    getOpportunityCounts(24),
+    getCapitalHistory(100, isPaper),
+    getExchangeBalances(),
+    getPaperBalances(),
+    getExchangeHealth(),
+    getTodayNetProfitUsdt(isPaper),
+    Promise.all(settings.watchedPairs.map(async (pair) => ({ pair, points: await getSpreadHistory(pair, 24) }))),
   ]);
+  const drawdown = getMaxDrawdown(capitalHistory);
 
-  const [priceExtremes, askLifecycle, bidLifecycle, divergence, priceHistory] = await Promise.all([
-    getPriceExtremes(),
-    analyzeTopAdLifecycle("ask"),
-    analyzeTopAdLifecycle("bid"),
-    getReferenceDivergenceSignal(
-      snapshot?.bestAsk == null ? null : Number(snapshot.bestAsk),
-      snapshot?.bestBid == null ? null : Number(snapshot.bestBid),
-      snapshot?.referenceUsdMzn == null ? null : Number(snapshot.referenceUsdMzn)
-    ),
-    getPriceHistory(24),
-  ]);
+  const killSwitchOn = settings?.killSwitchEngaged ?? false;
+  const activeBalances = isPaper ? paperBalances : exchangeBalances;
+  const currentBalance = activeBalances.reduce((sum, b) => sum + Number(b.totalValueUsdt), 0);
+  const displayInitial = isPaper ? 20 : initialBalance;
 
-  const latestOpportunity = opportunitiesList[0] ?? null;
+  const statusKey = killSwitchOn ? "paused" : (heartbeat?.status ?? "scanning");
+  const status = STATUS_LABEL[statusKey] ?? statusKey.toUpperCase();
+  const statusTone =
+    statusKey === "error" || statusKey === "paused"
+      ? "critical"
+      : statusKey === "executing" || statusKey === "recovery" || statusKey === "partially_filled"
+        ? "warning"
+        : "good";
 
-  // Padrões de hora/dia a partir do histórico já guardado, e a melhor
-  // combinação "compro a este, vendo àquele" com o capital que está mesmo
-  // livre — dois motores de lucro que a app não tinha.
-  const timing = await getTimingInsight(30);
-  const costPrefs = costPreferencesFrom(config);
-  const bestPair =
-    snapshot && capital.availableMzn > 0
-      ? findBestAdPairs(snapshot.askAds ?? [], snapshot.bidAds ?? [], capital.availableMzn, costPrefs, 1)[0] ??
-        null
-      : null;
+  const profitTotal = currentBalance - displayInitial;
+  const profitPct = displayInitial > 0 ? (profitTotal / displayInitial) * 100 : 0;
+
+  const bestNow = opportunities.find((o) => o.passedFilters) ?? null;
 
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold">Painel</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-lg font-semibold">Painel</h1>
+            <Badge tone={isPaper ? "neutral" : "critical"}>{isPaper ? "⚪ SIMULAÇÃO" : "🔴 REAL"}</Badge>
+          </div>
           <p className="text-sm text-[var(--muted)]">
-            Vigia o mercado USDT/MZN sozinho e avisa-te quando há uma oportunidade real.
+            Compara Binance e Bybit em tempo real e só age quando comprar numa e vender na outra dá lucro líquido
+            real, depois de taxas, slippage e margem de segurança.
           </p>
         </div>
-        <RefreshButton />
+        <form action={killSwitchOn ? resumeBotAction : engageKillSwitchAction}>
+          <SubmitButton
+            variant={killSwitchOn ? "secondary" : "danger"}
+            pendingText={killSwitchOn ? "A retomar..." : "A parar..."}
+            confirmMessage={killSwitchOn ? undefined : "Parar o bot? Nenhuma nova operação será iniciada até retomares."}
+          >
+            {killSwitchOn ? "Retomar bot" : "PARAR BOT"}
+          </SubmitButton>
+        </form>
       </div>
 
-      <Card className="flex items-start gap-3 border-l-4 border-l-[var(--accent-2)]">
-        <Info className="mt-0.5 h-4 w-4 shrink-0 text-[var(--accent-2)]" />
-        <p className="text-sm text-[var(--muted)]">
-          <b className="text-[var(--foreground)]">Como funciona:</b> o sistema compara o preço mais barato
-          para comprar USDT com o preço mais generoso para vender USDT, agora mesmo. Quando a diferença
-          cobre as taxas e ainda sobra lucro dentro do capital configurado, aparece aqui em baixo — e chega
-          um alerta ao telemóvel. Este sistema não compra nem vende sozinho: diz-te exactamente o que fazer,
-          tu executas na app da Binance.
-        </p>
-      </Card>
-
-      {pendingOps.length > 0 ? (
-        <Link href="/operacoes">
-          <Card className="flex items-center justify-between gap-3 border-l-4 border-l-[var(--warning)] transition-colors hover:bg-[var(--surface-2)]">
-            <div>
-              <p className="text-sm font-semibold text-[var(--foreground)]">
-                {pendingOps.length} {pendingOps.length === 1 ? "operação" : "operações"} à espera de vender
-              </p>
-              <p className="text-xs text-[var(--muted)]">
-                {formatMzn(pendingOps.reduce((s, o) => s + Number(o.capitalUsedMzn), 0))} em capital preso — toca
-                para ver
-              </p>
-            </div>
-            <Badge tone="warning">ver operações</Badge>
-          </Card>
-        </Link>
-      ) : null}
+      {isPaper ? (
+        <Card className="flex flex-wrap items-center justify-between gap-3 border-l-4 border-l-[var(--accent-2)]">
+          <p className="text-sm text-[var(--muted)]">
+            <b className="text-[var(--foreground)]">Modo simulação:</b> dados de mercado 100% reais, nenhuma ordem
+            real é enviada. Capital simulado começa em 10+10 USDT.
+          </p>
+          <form action={resetPaperBalancesAction}>
+            <SubmitButton variant="secondary" pendingText="A repor..." confirmMessage="Repor o capital simulado a 10/10 USDT e apagar o histórico de trades simulados?">
+              Reiniciar simulação
+            </SubmitButton>
+          </form>
+        </Card>
+      ) : (
+        <Card className="flex items-start gap-3 border-l-4 border-l-[var(--accent-2)]">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-[var(--accent-2)]" />
+          <p className="text-sm text-[var(--muted)]">
+            <b className="text-[var(--foreground)]">Como funciona:</b> o capital fica sempre pré-distribuído — USDT
+            numa exchange, o activo na outra — e nunca é transferido durante a arbitragem.
+          </p>
+        </Card>
+      )}
 
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-[var(--muted)]">Mercado USDT/MZN</h2>
-          {snapshot ? (
-            <span className="text-xs text-[var(--muted)]">
-              actualizado {timeAgo(new Date(snapshot.collectedAt))}
-            </span>
-          ) : null}
+          <h2 className="text-sm font-semibold text-[var(--muted)]">Carteiras</h2>
+          <a href={`/api/export/trades${isPaper ? "?paper=1" : ""}`} className="text-xs text-[var(--accent-2)] hover:underline">
+            exportar CSV
+          </a>
         </div>
-
-        {!snapshot ? (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {activeBalances.map((b) => (
+            <WalletBreakdown
+              key={b.exchangeId}
+              exchangeId={b.exchangeId}
+              totalValueUsdt={Number(b.totalValueUsdt)}
+              usdtFree={Number(b.usdtFree)}
+              assetsDetail={isPaper ? [] : (exchangeBalances.find((e) => e.exchangeId === b.exchangeId)?.assetsDetail ?? [])}
+              updatedAt={b.updatedAt}
+            />
+          ))}
           <Card>
-            <p className="text-sm text-[var(--muted)]">
-              Ainda não há nenhuma varredura registada. Carrega em &quot;Actualizar agora&quot; ou confirma
-              que o cron de /api/cron/scan está a correr (ver README).
-            </p>
+            <CardLabel>Total {isPaper ? "(simulado)" : ""}</CardLabel>
+            <div className="tabular text-xl font-semibold">{formatUsdt(currentBalance)}</div>
           </Card>
-        ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Card>
-              <CardLabel>Melhor compra (ask)</CardLabel>
-              <div className="tabular text-xl">{formatMzn(snapshot.bestAsk)}</div>
-              <p className="mt-1 text-xs text-[var(--muted)]">preço para tu comprares USDT</p>
-            </Card>
-            <Card>
-              <CardLabel>Melhor venda (bid)</CardLabel>
-              <div className="tabular text-xl">{formatMzn(snapshot.bestBid)}</div>
-              <p className="mt-1 text-xs text-[var(--muted)]">preço para tu venderes USDT</p>
-            </Card>
-            <Card>
-              <CardLabel>Spread</CardLabel>
-              <div className="tabular text-xl">{formatPct(snapshot.spreadPct)}</div>
-              <div className="mt-1">
-                <Badge tone={snapshot.isCrossed ? "good" : "neutral"}>
-                  {snapshot.isCrossed ? "livro cruzado" : "livro normal"}
-                </Badge>
-              </div>
-            </Card>
-            <Card>
-              <CardLabel>Livre para operar</CardLabel>
-              <div className="tabular text-xl">{formatMzn(capital.availableMzn)}</div>
-              {capital.lockedMzn > 0 ? (
-                <p className="mt-1 text-xs text-[var(--muted)]">
-                  {formatMzn(capital.lockedMzn)} presos em operações por fechar
-                </p>
-              ) : (
-                <Link href="/settings" className="mt-1 inline-block text-xs text-[var(--accent-2)] hover:underline">
-                  alterar
-                </Link>
-              )}
-            </Card>
-          </div>
-        )}
-      </section>
-
-      {bestPair ? (
-        <section>
-          <h2 className="mb-3 text-sm font-semibold text-[var(--muted)]">Melhor jogada neste momento</h2>
-          <Card className="border-l-4 border-l-[var(--good)]">
-            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <CardTitle className="text-base">Uma ordem de cada lado</CardTitle>
-                <p className="mt-1 text-sm text-[var(--muted)]">
-                  Comprar a um comerciante e vender a outro, sem repartir — metade das taxas fixas e muito
-                  menos tempo exposto ao mercado. A varredura clássica não testa estas combinações.
-                </p>
-              </div>
-              <div className="text-right">
-                <CardLabel>Lucro líquido</CardLabel>
-                <div className="tabular text-xl font-bold text-[var(--good)]">
-                  +{formatMzn(bestPair.netMzn)}
-                </div>
-                <p className="text-xs text-[var(--muted)]">{formatPct(bestPair.netPct)}</p>
-              </div>
-            </div>
-
-            <div className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <div>
-                <CardLabel>Compras a</CardLabel>
-                <div className="truncate text-sm font-medium">{bestPair.buyAd.merchantName}</div>
-                <div className="tabular text-xs text-[var(--muted)]">
-                  {formatMzn(bestPair.buyAd.price)}/USDT
-                </div>
-              </div>
-              <div>
-                <CardLabel>Vendes a</CardLabel>
-                <div className="truncate text-sm font-medium">{bestPair.sellAd.merchantName}</div>
-                <div className="tabular text-xs text-[var(--muted)]">
-                  {formatMzn(bestPair.sellAd.price)}/USDT
-                </div>
-              </div>
-              <div>
-                <CardLabel>Valor a negociar</CardLabel>
-                <div className="tabular text-sm">{formatMzn(bestPair.spendMzn)}</div>
-                <div className="tabular text-xs text-[var(--muted)]">{formatUsdt(bestPair.usdtAmount)}</div>
-              </div>
-              <div>
-                <CardLabel>Diferença de preço</CardLabel>
-                <div className="tabular text-sm">{formatPct(bestPair.spreadPct)}</div>
-              </div>
-            </div>
-
-            <Link href={`/simulacao?capital=${Math.round(bestPair.spendMzn)}&modo=equilibrado-1`}>
-              <Button variant="secondary">Ver plano completo na simulação</Button>
-            </Link>
-          </Card>
-        </section>
-      ) : null}
-
-      {snapshot ? (
-        <section>
-          <PriceHistoryChart points={priceHistory} hours={24} />
-        </section>
-      ) : null}
-
-      {timing.reliable ? (
-        <section>
-          <h2 className="mb-3 text-sm font-semibold text-[var(--muted)]">
-            Quando é que este mercado costuma estar bom
-          </h2>
-          <TimingCard timing={timing} />
-        </section>
-      ) : null}
-
-      {snapshot ? (
-        <section>
-          <MarketIntelligenceCard
-            bestAsk={snapshot.bestAsk === null ? null : Number(snapshot.bestAsk)}
-            bestBid={snapshot.bestBid === null ? null : Number(snapshot.bestBid)}
-            extremes={priceExtremes}
-            askLifecycle={askLifecycle}
-            bidLifecycle={bidLifecycle}
-            divergence={divergence}
-          />
-        </section>
-      ) : null}
-
-      <section>
-        <h2 className="mb-3 text-sm font-semibold text-[var(--muted)]">Oportunidade mais recente</h2>
-        {!latestOpportunity ? (
-          <Card>
-            <p className="text-sm text-[var(--muted)]">Nenhuma avaliação ainda.</p>
-          </Card>
-        ) : (
-          <Card
-            className={
-              latestOpportunity.meetsEntryRules ? "border-l-4 border-l-[var(--good)]" : "border-l-4 border-l-[var(--border)]"
-            }
-          >
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                {latestOpportunity.meetsEntryRules ? (
-                  <CheckCircle2 className="h-5 w-5 text-[var(--good)]" />
-                ) : (
-                  <XCircle className="h-5 w-5 text-[var(--muted)]" />
-                )}
-                <CardTitle className="text-base">
-                  {latestOpportunity.meetsEntryRules
-                    ? "Dentro das regras de segurança"
-                    : "Com avisos — decide tu se avanças"}
-                </CardTitle>
-              </div>
-              <span className="text-xs text-[var(--muted)]">
-                avaliado {timeAgo(new Date(latestOpportunity.detectedAt))} com{" "}
-                {formatMzn(latestOpportunity.capitalMzn)}
-              </span>
-            </div>
-
-            <div className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <div>
-                <CardLabel>USDT a negociar</CardLabel>
-                <div className="tabular">{formatUsdt(latestOpportunity.usdtAmount)}</div>
-              </div>
-              <div>
-                <CardLabel>Ordens necessárias</CardLabel>
-                <div className="tabular">{latestOpportunity.nOrders}</div>
-              </div>
-              <div>
-                <CardLabel>Lucro líquido esperado</CardLabel>
-                <div className="tabular font-semibold">{formatMzn(latestOpportunity.netProfitMediumMzn)}</div>
-              </div>
-              <div>
-                <CardLabel>ROI líquido</CardLabel>
-                <div className="tabular font-semibold">{formatPct(latestOpportunity.netPctMedium)}</div>
-              </div>
-            </div>
-
-            {latestOpportunity.reasonsBlocked.length > 0 ? (
-              <div className="mb-4 rounded-md bg-[var(--warning-bg)] p-3">
-                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--warning)]">
-                  Avisos — o plano abaixo é sempre mostrado, decide tu com esta informação
-                </p>
-                <ul className="list-inside list-disc text-sm text-[var(--foreground)]">
-                  {latestOpportunity.reasonsBlocked.map((r, i) => (
-                    <li key={i}>{r}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-
-            {latestOpportunity.detail.buySteps.length > 0 && latestOpportunity.detail.sellSteps.length > 0 ? (
-              <>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
-                  O que fazer agora
-                </p>
-                <ExecutionPlan
-                  buySteps={latestOpportunity.detail.buySteps}
-                  sellSteps={latestOpportunity.detail.sellSteps}
-                  netMzn={Number(latestOpportunity.netProfitMediumMzn)}
-                />
-                <div className="mt-4 flex flex-wrap gap-3">
-                  <Link href={`/trades/new?opportunityId=${latestOpportunity.id}`}>
-                    <Button>Já executei — registar operação</Button>
-                  </Link>
-                  <Link href={`/operacoes/nova?opportunityId=${latestOpportunity.id}`}>
-                    <Button variant="secondary">Comprei — falta vender</Button>
-                  </Link>
-                </div>
-              </>
-            ) : null}
-          </Card>
-        )}
+        </div>
+        {heartbeat?.rebalanceRecommended ? (
+          <p className="mt-2 text-xs text-[var(--warning)]">⚠ {heartbeat.rebalanceReason}</p>
+        ) : null}
       </section>
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold text-[var(--muted)]">Desempenho reportado</h2>
+        <h2 className="mb-3 text-sm font-semibold text-[var(--muted)]">Saúde das exchanges</h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {EXCHANGE_IDS.map((id) => {
+            const h = exchangeHealthRows.find((r) => r.exchangeId === id);
+            return (
+              <ExchangeHealthCard
+                key={id}
+                exchangeId={id}
+                lastSuccessAt={h?.lastSuccessAt ?? null}
+                lastErrorAt={h?.lastErrorAt ?? null}
+                lastErrorMessage={h?.lastErrorMessage ?? null}
+                avgLatencyMs={h?.avgLatencyMs ?? null}
+              />
+            );
+          })}
+        </div>
+      </section>
+
+      <section>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-[var(--muted)]">Estado do robô</h2>
+          {heartbeat ? <span className="text-xs text-[var(--muted)]">actualizado {timeAgo(new Date(heartbeat.at))}</span> : null}
+        </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Card>
-            <CardLabel>Operações</CardLabel>
-            <div className="tabular text-xl">{stats.totalTrades}</div>
+            <CardLabel>Status</CardLabel>
+            <Badge tone={statusTone}>{status}</Badge>
+            {heartbeat?.statusDetail ? <p className="mt-1 text-xs text-[var(--muted)]">{heartbeat.statusDetail}</p> : null}
           </Card>
+          <MoneyStat
+            className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5"
+            label="Lucro total"
+            amountUsdt={profitTotal}
+            hint={formatPct(profitPct)}
+          />
+          <MoneyStat
+            className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5"
+            label="P&L hoje"
+            amountUsdt={todayNet}
+          />
           <Card>
-            <CardLabel>Taxa de sucesso</CardLabel>
-            <div className="tabular text-xl">
-              {stats.totalTrades > 0 ? `${((Number(stats.wins) / Number(stats.totalTrades)) * 100).toFixed(0)}%` : "—"}
-            </div>
-          </Card>
-          <Card>
-            <CardLabel>Lucro líquido total</CardLabel>
-            <div className="tabular text-xl">{formatMzn(stats.totalNetProfit)}</div>
-          </Card>
-          <Card>
-            <CardLabel>ROI médio / operação</CardLabel>
-            <div className="tabular text-xl">{formatPct(stats.avgNetPct)}</div>
+            <CardLabel>Maior queda</CardLabel>
+            <div className="tabular text-xl text-[var(--critical)]">{formatUsdt(drawdown.maxDrawdownUsdt)}</div>
+            <p className="mt-1 text-xs text-[var(--muted)]">{formatPct(-drawdown.maxDrawdownPct)}</p>
           </Card>
         </div>
       </section>
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold text-[var(--muted)]">Histórico de avaliações</h2>
-        <OpportunitiesHistoryTable opportunities={opportunitiesList} />
+        <h2 className="mb-3 text-sm font-semibold text-[var(--muted)]">Desempenho</h2>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Card>
+            <CardLabel>Trades</CardLabel>
+            <div className="tabular text-xl">{stats.totalTrades}</div>
+            <p className="mt-1 text-xs text-[var(--muted)]">win rate {stats.winRatePct.toFixed(0)}%</p>
+          </Card>
+          <Card>
+            <CardLabel>Lucrativas</CardLabel>
+            <div className="tabular text-xl text-[var(--good)]">{stats.winCount}</div>
+          </Card>
+          <Card>
+            <CardLabel>Perdedoras</CardLabel>
+            <div className="tabular text-xl text-[var(--critical)]">{stats.lossCount}</div>
+          </Card>
+          <Card>
+            <CardLabel>Oportunidades (24h)</CardLabel>
+            <div className="tabular text-xl">
+              {counts24h.passed}
+              <span className="text-sm text-[var(--muted)]"> / {counts24h.total}</span>
+            </div>
+          </Card>
+        </div>
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-sm font-semibold text-[var(--muted)]">Evolução do saldo {isPaper ? "(simulado)" : ""}</h2>
+        <Card>
+          <CapitalChart history={capitalHistory} />
+        </Card>
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-sm font-semibold text-[var(--muted)]">Margem líquida por par (24h)</h2>
+        <Card>
+          <SpreadHistoryChart series={spreadSeries} />
+        </Card>
+      </section>
+
+      <section>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-[var(--muted)]">Melhor oportunidade agora</h2>
+          <Link href="/oportunidades" className="text-xs text-[var(--accent-2)] hover:underline">
+            ver ranking completo
+          </Link>
+        </div>
+        {!bestNow ? (
+          <Card>
+            <p className="text-sm text-[var(--muted)]">Nenhuma oportunidade dentro das regras de segurança neste momento — o robô só espera (secção 38).</p>
+          </Card>
+        ) : (
+          <Card className="border-l-4 border-l-[var(--good)]">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle className="text-base">{bestNow.pair}</CardTitle>
+              <span className="text-xs text-[var(--muted)]">avaliada {timeAgo(new Date(bestNow.detectedAt))}</span>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-6 text-sm">
+              <div>
+                <CardLabel>Comprar</CardLabel>
+                <div>{EXCHANGE_LABEL[bestNow.buyExchange]} — <span className="tabular">{formatUsdt(bestNow.buyPrice, 2)}</span></div>
+              </div>
+              <div>
+                <CardLabel>Vender</CardLabel>
+                <div>{EXCHANGE_LABEL[bestNow.sellExchange]} — <span className="tabular">{formatUsdt(bestNow.sellPrice, 2)}</span></div>
+              </div>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <div>
+                <CardLabel>Spread bruto</CardLabel>
+                <div className="tabular">{formatPct(bestNow.grossSpreadPct)}</div>
+              </div>
+              <div>
+                <CardLabel>Taxas</CardLabel>
+                <div className="tabular">{formatPct(bestNow.feesPct)}</div>
+              </div>
+              <div>
+                <CardLabel>Slippage estimado</CardLabel>
+                <div className="tabular">{formatPct(bestNow.estimatedSlippagePct)}</div>
+              </div>
+              <div>
+                <CardLabel>Lucro líquido</CardLabel>
+                <div className="tabular font-semibold text-[var(--good)]">{formatPct(bestNow.netPct)}</div>
+              </div>
+            </div>
+            <div className="mt-3 flex items-center gap-2">
+              <Badge tone="good">EXECUTÁVEL</Badge>
+              <span className="tabular text-sm text-[var(--muted)]">{formatUsdt(bestNow.netResultUsdt)} sobre {formatUsdt(bestNow.capitalUsdt)}</span>
+            </div>
+          </Card>
+        )}
+      </section>
+
+      <section>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-[var(--muted)]">Últimas operações {isPaper ? "(simuladas)" : ""}</h2>
+          <Link href="/operacoes" className="text-xs text-[var(--accent-2)] hover:underline">
+            ver histórico completo
+          </Link>
+        </div>
+        {trades.length === 0 ? (
+          <Card>
+            <p className="text-sm text-[var(--muted)]">Ainda nenhuma operação {isPaper ? "simulada" : "executada"}.</p>
+          </Card>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {trades.slice(0, 5).map((t) => (
+              <li key={t.id} className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium">
+                    {t.pair} — {EXCHANGE_LABEL[t.buyExchange]} → {EXCHANGE_LABEL[t.sellExchange]}
+                  </p>
+                  <p className="text-xs text-[var(--muted)]">{new Date(t.startedAt).toLocaleString("pt-PT")}</p>
+                </div>
+                <span className={`tabular text-sm font-semibold ${Number(t.profitRealUsdt) >= 0 ? "text-[var(--good)]" : "text-[var(--critical)]"}`}>
+                  {formatUsdt(t.profitRealUsdt)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </div>
   );

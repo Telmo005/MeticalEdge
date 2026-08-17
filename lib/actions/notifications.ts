@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { alerts, settings } from "@/db/schema";
+import { alerts, botSettings } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { sendPush, sendSms } from "@/lib/messaging-client";
 
@@ -23,7 +23,7 @@ export type TestNotificationResult = {
 export async function sendTestNotificationAction(): Promise<TestNotificationResult> {
   await requireUser();
 
-  const [config] = await db.select().from(settings).where(eq(settings.id, true)).limit(1);
+  const [config] = await db.select().from(botSettings).where(eq(botSettings.id, true)).limit(1);
 
   const title = "Teste de notificação";
   const body = "Se recebeste isto, os alertas do MeticalEdge estão a funcionar.";

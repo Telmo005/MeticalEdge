@@ -1,9 +1,7 @@
-import { cn, formatMzn } from "@/lib/utils";
+import { cn, formatUsdtSigned } from "@/lib/utils";
 import { CardLabel } from "@/components/ui/card";
 
-/** Rótulo + número, com as mesmas classes que as páginas já usavam
- *  (CardLabel + div.tabular). Só existe para não repetir o par em todo o
- *  lado; não muda o aspecto de nada. */
+/** Rótulo + número — usado em todos os cartões de KPI do painel. */
 export function Stat({
   label,
   value,
@@ -34,24 +32,23 @@ export function Stat({
   );
 }
 
-/** Valor em Meticais que fica verde ou vermelho conforme seja ganho ou
- *  perda. */
+/** Valor em USDT que fica verde ou vermelho conforme seja ganho ou perda. */
 export function MoneyStat({
   label,
-  amountMzn,
+  amountUsdt,
   hint,
   className,
 }: {
   label: string;
-  amountMzn: number | null | undefined;
+  amountUsdt: number | null | undefined;
   hint?: React.ReactNode;
   className?: string;
 }) {
-  const n = amountMzn ?? null;
+  const n = amountUsdt ?? null;
   return (
     <Stat
       label={label}
-      value={n === null ? "—" : `${n > 0 ? "+" : ""}${formatMzn(n)}`}
+      value={n === null ? "—" : formatUsdtSigned(n)}
       hint={hint}
       tone={n === null ? "default" : n > 0 ? "good" : n < 0 ? "critical" : "default"}
       className={className}

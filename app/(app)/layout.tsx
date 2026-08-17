@@ -1,32 +1,31 @@
 import Link from "next/link";
 import { TrendingUp } from "lucide-react";
-import { getCapitalPosition, getUnreadAlertsCount, getRecentAlerts } from "@/lib/queries";
-import { formatMzn } from "@/lib/utils";
+import { getBotSettings, getExchangeBalances, getUnreadAlertsCount, getRecentAlerts } from "@/lib/queries";
+import { formatUsdt } from "@/lib/utils";
 import { SidebarNav, BottomTabBar } from "@/components/layout/nav";
 import { SignOutButton } from "@/components/layout/sign-out-button";
 import { NotificationBell } from "@/components/layout/notification-bell";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { AppFooter } from "@/components/layout/app-footer";
 
-// Todas as páginas aqui dentro leem dados ao vivo (mercado, capital,
+// Todas as páginas aqui dentro leem dados ao vivo (saldo, oportunidades,
 // notificações) atrás de autenticação — nunca devem ser pré-geradas em
-// build (isso executaria as queries contra a base de dados durante `next
-// build`, sem sessão nenhuma, e serviria uma cópia estática desactualizada
-// depois). Isto também evita o build tentar pré-renderizar estas páginas
-// e estourar o limite de tempo por página.
+// build.
 export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const [capital, unreadCount, recentAlerts] = await Promise.all([
-    getCapitalPosition(),
+  const [settings, exchangeBalances, unreadCount, recentAlerts] = await Promise.all([
+    getBotSettings(),
+    getExchangeBalances(),
     getUnreadAlertsCount(),
     getRecentAlerts(15),
   ]);
 
+  const balance = exchangeBalances.reduce((sum, b) => sum + Number(b.totalValueUsdt), 0);
+  const killSwitchOn = settings?.killSwitchEngaged ?? false;
+
   return (
     <div className="min-h-dvh lg:flex">
-      {/* Uma única instância aqui no layout partilhado — actualiza sozinho
-          qualquer ecrã em que estejamos, sem repetir isto página a página. */}
       <AutoRefresh />
       {/* Sidebar — desktop apenas */}
       <aside className="hidden shrink-0 flex-col justify-between border-r border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] px-4 py-5 lg:flex lg:h-dvh lg:w-64 lg:sticky lg:top-0">
@@ -35,7 +34,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <TrendingUp className="h-5 w-5 text-[var(--accent)]" />
             <div>
               <p className="text-sm font-bold text-[var(--sidebar-fg)]">MeticalEdge</p>
-              <p className="text-[11px] text-[var(--sidebar-muted)]">Monitor USDT/MZN</p>
+              <p className="text-[11px] text-[var(--sidebar-muted)]">Robô de arbitragem cripto</p>
             </div>
           </div>
           <SidebarNav />
@@ -43,20 +42,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
         <div className="flex flex-col gap-3">
           <div className="rounded-md border border-[var(--sidebar-border)] bg-[var(--sidebar-active)] px-3 py-2.5">
-            {/* Capital LIVRE, não o total: enquanto houver compras por
-                fechar, o total é um número que não se pode gastar — e o
-                sistema mostrava-o como se estivesse todo disponível. */}
-            <p className="text-[11px] uppercase tracking-wide text-[var(--sidebar-muted)]">
-              Livre para operar
-            </p>
-            <p className="tabular text-sm font-semibold text-[var(--sidebar-fg)]">
-              {formatMzn(capital.availableMzn)}
-            </p>
-            {capital.lockedMzn > 0 ? (
-              <p className="mt-1 text-[11px] text-[var(--sidebar-muted)]">
-                {formatMzn(capital.lockedMzn)} presos em {capital.lockedOperations}{" "}
-                {capital.lockedOperations === 1 ? "operação" : "operações"}
-              </p>
+            <p className="text-[11px] uppercase tracking-wide text-[var(--sidebar-muted)]">Saldo real</p>
+            <p className="tabular text-sm font-semibold text-[var(--sidebar-fg)]">{formatUsdt(balance)}</p>
+            {killSwitchOn ? (
+              <p className="mt-1 text-[11px] font-semibold text-[var(--critical)]">BOT PARADO</p>
             ) : null}
           </div>
           <SignOutButton />
@@ -71,9 +60,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <span className="text-sm font-bold">MeticalEdge</span>
           </Link>
           <div className="flex items-center gap-3">
-            <div className="tabular text-xs font-semibold text-[var(--muted)]">
-              {formatMzn(capital.availableMzn)}
-            </div>
+            <div className="tabular text-xs font-semibold text-[var(--muted)]">{formatUsdt(balance)}</div>
             <NotificationBell
               unreadCount={unreadCount}
               alerts={recentAlerts}
@@ -83,8 +70,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
         </header>
 
-        {/* Barra superior — desktop apenas: o sino fica sempre à direita da
-            página, fora da sidebar (que está à esquerda). */}
+        {/* Barra superior — desktop apenas */}
         <header className="sticky top-0 z-30 hidden h-14 items-center justify-end border-b border-[var(--border)] bg-[var(--surface)] px-6 lg:flex">
           <NotificationBell unreadCount={unreadCount} alerts={recentAlerts} />
         </header>

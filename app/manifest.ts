@@ -5,9 +5,9 @@ import type { MetadataRoute } from "next";
  *  ecrã principal" como app instalável, não só um atalho de browser. */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "MeticalEdge — Monitor USDT/MZN",
+    name: "MeticalEdge — Arbitragem Binance ↔ Bybit",
     short_name: "MeticalEdge",
-    description: "Monitor de oportunidades USDT/MZN no Binance P2P",
+    description: "Painel do robô de arbitragem cross-exchange entre Binance e Bybit",
     start_url: "/",
     display: "standalone",
     background_color: "#0b1220",
